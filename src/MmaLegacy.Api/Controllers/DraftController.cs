@@ -60,4 +60,34 @@ public sealed class DraftController(ServicoDeDraft servicoDeDraft) : ControllerB
 
         return Ok(PartidaResposta.DeDominio(partida));
     }
+
+    /// <summary>
+    /// Dispensa o atleta da rodada atual e sorteia outro no lugar.
+    /// </summary>
+    /// <remarks>
+    /// O jogador tem dois pulos no modo fácil e um no difícil. É a saída para
+    /// quando o atleta da vez não tem nada que sirva ao que falta montar — e é
+    /// escasso de propósito, para continuar sendo uma decisão.
+    /// <para>
+    /// A resposta é a rodada nova, e não a partida, porque o front precisa
+    /// justamente do substituto para redesenhar a tela.
+    /// </para>
+    /// </remarks>
+    /// <response code="200">Atleta substituído.</response>
+    /// <response code="404">Partida inexistente.</response>
+    /// <response code="409">Os pulos acabaram ou o draft já foi concluído.</response>
+    [HttpPost("pular")]
+    [ProducesResponseType<RodadaAtualResposta>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RodadaAtualResposta>> Pular(
+        Guid partidaId,
+        CancellationToken cancelamento)
+    {
+        await servicoDeDraft.PularAsync(partidaId, cancelamento);
+
+        var rodada = await servicoDeDraft.ObterRodadaAtualAsync(partidaId, cancelamento);
+
+        return Ok(RodadaAtualResposta.DeDominio(rodada));
+    }
 }
