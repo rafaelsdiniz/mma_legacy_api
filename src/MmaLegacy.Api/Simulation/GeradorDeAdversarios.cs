@@ -133,6 +133,27 @@ public sealed class GeradorDeAdversarios
         return Atributos.APartirDe(calibrado);
     }
 
+    /// <summary>
+    /// Inventa um cartel plausível para o adversário, do tipo "17-3-1".
+    /// </summary>
+    /// <remarks>
+    /// É enfeite, e enfeite honesto: o número sai do degrau em que a luta
+    /// acontece, então ninguém aparece no circuito regional com 24 vitórias nem
+    /// desafia por cinturão com cartel de estreante. O motor de luta não olha
+    /// para ele — quem decide a luta continua sendo o atributo.
+    /// </remarks>
+    public string GerarCartel(EtapaDaCarreira etapa, Sorteio sorteio)
+    {
+        ArgumentNullException.ThrowIfNull(sorteio);
+
+        var experiencia = (int)etapa;
+        var vitorias = sorteio.Inteiro(2 + (experiencia * 2), 6 + (experiencia * 4));
+        var derrotas = sorteio.Inteiro(0, Math.Max(2, 8 - experiencia));
+        var empates = sorteio.Acontece(0.12) ? 1 : 0;
+
+        return $"{vitorias}-{derrotas}-{empates}";
+    }
+
     private static string GerarNome(Sorteio sorteio) =>
         $"{sorteio.Escolher(Prenomes)} {sorteio.Escolher(Sobrenomes)}";
 }

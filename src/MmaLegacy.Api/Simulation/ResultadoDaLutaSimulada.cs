@@ -14,4 +14,16 @@ namespace MmaLegacy.Api.Simulation;
 public sealed record ResultadoDaLutaSimulada(
     ResultadoDaLuta Resultado,
     MetodoDeEncerramento Metodo,
-    int RoundDoEncerramento);
+    int RoundDoEncerramento)
+{
+    /// <summary>
+    /// O round a round da luta.
+    /// </summary>
+    /// <remarks>
+    /// Fica fora do construtor posicional de propósito: o desfecho é invertido
+    /// com <c>with</c> quando a ordem de resolução do round começa pelo
+    /// adversário, e a lista de rounds é montada depois, já na perspectiva
+    /// certa. Deixá-la posicional convidaria a preenchê-la no lugar errado.
+    /// </remarks>
+    public IReadOnlyList<RoundDaLuta> Rounds { get; init; } = [];
+}
