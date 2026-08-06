@@ -1,52 +1,59 @@
 using MmaLegacy.Api.Domain;
 using MmaLegacy.Api.Domain.Enums;
+using MmaLegacy.Api.Domain.Exceptions;
 using MmaLegacy.Api.Domain.Rules;
 
 namespace MmaLegacy.Api.Simulation;
 
 /// <summary>
-/// Simula a trajetória inteira do lutador, da estreia à aposentadoria.
+/// Conduz a carreira do lutador, uma decisão de cada vez.
 /// </summary>
 /// <remarks>
-/// A carreira é uma sequência de temporadas. Cada temporada tem um punhado de
-/// lutas — mais no começo, menos no topo, como na vida real — e termina com um
-/// ano a mais na conta e os atributos passados pela curva de evolução.
+/// O motor não simula mais a vida inteira em um laço. Ele expõe os movimentos
+/// que o jogador pode fazer — <see cref="Aceitar"/>, <see cref="Recusar"/>,
+/// <see cref="Aposentar"/> — e, depois de cada um, arruma a mesa para o
+/// seguinte: move o lutador na escada, cobra o preço do tempo, decide se a
+/// organização ainda o quer e põe novas ofertas à frente dele.
 /// <para>
-/// O motor não decide nada sobre lutas: ele só prepara o contexto (quem é o
-/// adversário, quantos rounds, se vale cinturão), entrega ao
-/// <see cref="MotorDeLuta"/> e reage ao resultado movendo o lutador para cima
-/// ou para baixo na escala de <see cref="EtapaDaCarreira"/>.
+/// <b>Determinismo sem sequência viva.</b> Antes havia um <see cref="Sorteio"/>
+/// só, criado no início da simulação e consumido do começo ao fim. Com a
+/// carreira jogada em requisições separadas essa sequência não sobrevive entre
+/// uma jogada e outra, então cada passo deriva a própria semente da semente da
+/// partida, do número do passo e da finalidade do sorteio. Três finalidades
+/// distintas garantem que a geração das ofertas não ande de mãos dadas com o
+/// resultado da luta nem com a evolução dos atributos.
+/// </para>
+/// <para>
+/// <see cref="Simular"/> continua existindo e agora é apenas um jogador
+/// automático: ele aceita a luta mais equilibrada de cada rodada até a
+/// aposentadoria. É o que sustenta o "simular o resto da carreira" e os testes
+/// de balanceamento, que precisam de milhares de carreiras completas.
 /// </para>
 /// </remarks>
 public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversarios geradorDeAdversarios)
 {
-    /// <summary>Quantas lutas por ano em cada degrau. No topo se luta menos.</summary>
-    private static readonly Dictionary<EtapaDaCarreira, int> LutasPorTemporada = new()
+    /// <summary>
+    /// Quanto cada oferta da rodada foge da faixa normal do degrau. A primeira é
+    /// sempre a segura e a última, a perigosa — é o eixo da decisão do jogador.
+    /// </summary>
+    private static readonly Dictionary<int, IReadOnlyList<int>> DesviosDeOverallPorOferta = new()
     {
-        [EtapaDaCarreira.CircuitoRegional] = 4,
-        [EtapaDaCarreira.OrganizacaoNacional] = 3,
-        [EtapaDaCarreira.GrandeOrganizacao] = 2,
-        [EtapaDaCarreira.Top15] = 2,
-        [EtapaDaCarreira.Top5] = 2,
-        [EtapaDaCarreira.DisputaDeCinturao] = 2,
-        [EtapaDaCarreira.Campeao] = 2
-    };
-
-    /// <summary>Vitórias seguidas no degrau necessárias para subir ao próximo.</summary>
-    private static readonly Dictionary<EtapaDaCarreira, int> VitoriasParaSubir = new()
-    {
-        [EtapaDaCarreira.CircuitoRegional] = 4,
-        [EtapaDaCarreira.OrganizacaoNacional] = 4,
-        [EtapaDaCarreira.GrandeOrganizacao] = 3,
-        [EtapaDaCarreira.Top15] = 3,
-        [EtapaDaCarreira.Top5] = 2
+        [1] = [0],
+        [2] = [-4, 5],
+        [3] = [-4, 0, 6]
     };
 
     private const int RoundsDeLutaComum = 3;
     private const int RoundsDeLutaDeCinturao = 5;
 
-    /// <summary>Derrotas seguidas que fazem o lutador cair um degrau.</summary>
-    private const int DerrotasParaCair = 2;
+    /// <summary>Derrotas seguidas que fazem um veterano pendurar as luvas.</summary>
+    private const int DerrotasQueAposentamVeterano = 2;
+
+    /// <summary>
+    /// Quanto o adversário precisa estar acima do lutador para a vitória contar
+    /// dobrado na fila do degrau.
+    /// </summary>
+    private const int VantagemQueValeDobro = 3;
 
     /// <summary>Defesas de cinturão necessárias antes de tentar uma segunda categoria.</summary>
     private const int DefesasParaMudarDeCategoria = 3;
@@ -60,7 +67,7 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// <summary>Idade em que todo lutador se aposenta, aconteça o que acontecer.</summary>
     private const int IdadeLimiteDeCarreira = 40;
 
-    /// <summary>Teto de lutas, apenas como trava de segurança do laço.</summary>
+    /// <summary>Teto de lutas, apenas como trava de segurança.</summary>
     private const int MaximoDeLutas = 60;
 
     private const int IdadeDeVeterano = 36;
@@ -70,143 +77,327 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     private const int LutasMinimasAntesDeDesistir = 10;
     private const int VitoriasMinimasParaSeguir = 5;
 
-    public Carreira Simular(Partida partida)
+    // Salgam a semente de cada passo para que os três sorteios de uma mesma
+    // decisão sejam sequências independentes.
+    private const int FinalidadeDaLuta = 1;
+    private const int FinalidadeDaEvolucao = 2;
+    private const int FinalidadeDasOfertas = 3;
+
+    /// <summary>
+    /// Estreia o lutador: cria a carreira e põe a primeira luta na mesa.
+    /// </summary>
+    /// <remarks>
+    /// A carreira volta solta, sem ser presa à partida. Quem faz esse vínculo é
+    /// o serviço, que também é quem persiste — o motor não conhece banco.
+    /// </remarks>
+    public Carreira Iniciar(Partida partida)
     {
         ArgumentNullException.ThrowIfNull(partida);
 
         var lutador = partida.ExigirLutadorMontado();
-        var sorteio = new Sorteio(partida.SeedDaCarreira);
-        var carreira = Carreira.Iniciar(partida.Id, partida.Ficha.IdadeInicial, partida.Ficha.CategoriaDePeso);
-        var estado = new EstadoDaCarreira(partida.Ficha, lutador);
+        var carreira = Carreira.Iniciar(partida.Id, partida.Ficha, lutador);
 
-        // Laço do-while: todo lutador disputa ao menos uma temporada, mesmo
-        // estreando na idade máxima permitida pela ficha.
-        do
-        {
-            DisputarTemporada(carreira, estado, sorteio);
-            EncerrarTemporada(estado, sorteio);
-        }
-        while (!DeveAposentar(estado));
-
-        carreira.Encerrar(estado.Idade, estado.OverallMaximo);
-        CalculadoraDeLegado.Aplicar(carreira);
+        ColocarOfertasNaMesa(partida, carreira);
 
         return carreira;
     }
 
-    private void DisputarTemporada(Carreira carreira, EstadoDaCarreira estado, Sorteio sorteio)
+    /// <summary>
+    /// O jogador aceita uma das ofertas: a luta acontece e a carreira reage a
+    /// ela.
+    /// </summary>
+    /// <param name="indiceDaOferta">Índice da oferta escolhida, começando em 1.</param>
+    public PassoDaCarreira Aceitar(Partida partida, Carreira carreira, int indiceDaOferta)
     {
-        var lutasDoAno = LutasPorTemporada[estado.Etapa];
+        ArgumentNullException.ThrowIfNull(partida);
+        ArgumentNullException.ThrowIfNull(carreira);
 
-        for (var luta = 0; luta < lutasDoAno && estado.TotalDeLutas < MaximoDeLutas; luta++)
-        {
-            DisputarLuta(carreira, estado, sorteio);
-        }
-    }
+        var estado = carreira.Estado;
+        var oferta = carreira.ExigirOferta(indiceDaOferta);
+        var passo = estado.AvancarPasso();
+        var eventos = new List<EventoDaCarreira>();
 
-    private void DisputarLuta(Carreira carreira, EstadoDaCarreira estado, Sorteio sorteio)
-    {
-        var disputaDeCinturao = estado.Etapa == EtapaDaCarreira.DisputaDeCinturao;
-        var defesaDeCinturao = estado.Etapa == EtapaDaCarreira.Campeao;
-        var roundsProgramados = disputaDeCinturao || defesaDeCinturao
-            ? RoundsDeLutaDeCinturao
-            : RoundsDeLutaComum;
+        var adversario = PerfilDeCombate.Montar(oferta.Adversario, oferta.AtributosDoAdversario);
+        var desfecho = motorDeLuta.Simular(
+            PerfilDeCombate.Montar(partida.Ficha.Nome, estado.Atributos),
+            adversario,
+            oferta.RoundsProgramados,
+            Sortear(partida, passo, FinalidadeDaLuta));
 
-        var adversario = geradorDeAdversarios.Gerar(estado.Etapa, estado.AjusteDeOverallDoAdversario, sorteio);
-        var protagonista = PerfilDeCombate.Montar(estado.Nome, estado.Atributos);
-
-        var desfecho = motorDeLuta.Simular(protagonista, adversario, roundsProgramados, sorteio);
-
-        carreira.RegistrarLuta(new LutaDaCarreira(
-            ordem: estado.TotalDeLutas + 1,
+        var luta = new LutaDaCarreira(
+            ordem: carreira.TotalDeLutas + 1,
             idade: estado.Idade,
             adversario: adversario.Nome,
             overallDoAdversario: adversario.Overall,
             estiloDoAdversario: adversario.Estilo,
-            organizacao: DeterminarOrganizacao(estado.Etapa),
-            categoria: estado.Categoria,
-            disputaDeCinturao: disputaDeCinturao,
-            defesaDeCinturao: defesaDeCinturao,
-            roundsProgramados: roundsProgramados,
+            organizacao: oferta.Organizacao,
+            categoria: oferta.Categoria,
+            disputaDeCinturao: oferta.DisputaDeCinturao,
+            defesaDeCinturao: oferta.DefesaDeCinturao,
+            roundsProgramados: oferta.RoundsProgramados,
             resultado: desfecho.Resultado,
             metodo: desfecho.Metodo,
-            roundDoEncerramento: desfecho.RoundDoEncerramento));
+            roundDoEncerramento: desfecho.RoundDoEncerramento);
 
-        estado.RegistrarResultado(desfecho);
-        AvancarNaEscada(estado, desfecho.Resultado);
+        var pesoDaVitoria = PesoDaVitoria(estado, oferta);
+
+        carreira.LimparOfertas();
+        carreira.RegistrarLuta(luta);
+        estado.RegistrarResultado(desfecho.Resultado, desfecho.Metodo, pesoDaVitoria);
+
+        AvancarNaEscada(estado, desfecho.Resultado, eventos);
+        ArrumarAMesaParaOProximoPasso(partida, carreira, passo, eventos);
+
+        return new PassoDaCarreira(luta, desfecho, eventos);
+    }
+
+    /// <summary>
+    /// O jogador recusa a rodada inteira de ofertas e fica parado.
+    /// </summary>
+    /// <remarks>
+    /// A recusa consome o mesmo espaço de calendário que uma luta consumiria e
+    /// apaga o caso que o lutador vinha construindo para subir de degrau. Três
+    /// recusas seguidas e a organização o dispensa.
+    /// </remarks>
+    public PassoDaCarreira Recusar(Partida partida, Carreira carreira)
+    {
+        ArgumentNullException.ThrowIfNull(partida);
+        ArgumentNullException.ThrowIfNull(carreira);
+
+        RegraDeNegocioException.Se(
+            carreira.Encerrada,
+            "Esta carreira já foi encerrada.");
+
+        RegraDeNegocioException.Se(
+            carreira.Ofertas.Count == 0,
+            "Não há nenhuma oferta de luta na mesa para recusar.");
+
+        var estado = carreira.Estado;
+        var passo = estado.AvancarPasso();
+        var eventos = new List<EventoDaCarreira> { EventoDaCarreira.FicouInativo };
+
+        carreira.LimparOfertas();
+        estado.RegistrarRecusa();
+
+        ArrumarAMesaParaOProximoPasso(partida, carreira, passo, eventos);
+
+        return new PassoDaCarreira(null, null, eventos);
+    }
+
+    /// <summary>O jogador pendura as luvas por vontade própria, no auge ou não.</summary>
+    public PassoDaCarreira Aposentar(Partida partida, Carreira carreira)
+    {
+        ArgumentNullException.ThrowIfNull(partida);
+        ArgumentNullException.ThrowIfNull(carreira);
+
+        var eventos = new List<EventoDaCarreira>();
+        EncerrarCarreira(partida, carreira, MotivoDoEncerramento.EscolhaDoLutador, eventos);
+
+        return new PassoDaCarreira(null, null, eventos);
+    }
+
+    /// <summary>
+    /// Joga a carreira sozinho até o fim, aceitando sempre a luta mais
+    /// equilibrada de cada rodada.
+    /// </summary>
+    /// <remarks>
+    /// É o "simular o resto" de quem cansou no meio do caminho, e é também como
+    /// os testes de balanceamento produzem carreiras inteiras. Escolher a oferta
+    /// de overall mais próximo do próprio lutador imita um empresário sensato:
+    /// nem só luta fácil, que não leva a lugar nenhum, nem só luta impossível.
+    /// </remarks>
+    public PassoDaCarreira SimularOResto(Partida partida, Carreira carreira)
+    {
+        ArgumentNullException.ThrowIfNull(partida);
+        ArgumentNullException.ThrowIfNull(carreira);
+
+        var eventos = new List<EventoDaCarreira>();
+        LutaDaCarreira? ultimaLuta = null;
+
+        while (!carreira.Encerrada && carreira.Ofertas.Count > 0)
+        {
+            var passo = Aceitar(partida, carreira, EscolherOfertaMaisEquilibrada(carreira).Indice);
+
+            ultimaLuta = passo.Luta ?? ultimaLuta;
+            eventos.AddRange(passo.Eventos);
+        }
+
+        return new PassoDaCarreira(ultimaLuta, null, eventos);
+    }
+
+    /// <summary>Estreia e joga a carreira inteira de uma vez.</summary>
+    public Carreira Simular(Partida partida)
+    {
+        ArgumentNullException.ThrowIfNull(partida);
+
+        var carreira = Iniciar(partida);
+        SimularOResto(partida, carreira);
+
+        return carreira;
+    }
+
+    /// <summary>
+    /// Tudo que acontece depois de uma decisão, na ordem em que a vida cobra:
+    /// primeiro a organização decide se ainda quer o lutador, depois o
+    /// calendário decide se o ano virou, e por fim o corpo decide se ainda dá.
+    /// </summary>
+    private void ArrumarAMesaParaOProximoPasso(
+        Partida partida,
+        Carreira carreira,
+        int passo,
+        List<EventoDaCarreira> eventos)
+    {
+        var motivoDaDispensa = AvaliarDispensa(carreira.Estado, eventos);
+
+        if (motivoDaDispensa is null)
+        {
+            FecharTemporadaSeForOCaso(partida, carreira, passo, eventos);
+        }
+
+        if ((motivoDaDispensa ?? MotivoParaAposentar(carreira)) is { } motivo)
+        {
+            EncerrarCarreira(partida, carreira, motivo, eventos);
+            return;
+        }
+
+        ColocarOfertasNaMesa(partida, carreira);
+    }
+
+    /// <summary>
+    /// Decide se a organização rescinde o contrato.
+    /// </summary>
+    /// <returns>
+    /// O motivo do fim da carreira quando não há degrau abaixo para onde cair —
+    /// ser cortado no circuito regional é o fim da linha, não um recomeço.
+    /// </returns>
+    private static MotivoDoEncerramento? AvaliarDispensa(
+        EstadoDaCarreira estado,
+        List<EventoDaCarreira> eventos)
+    {
+        var foiCortado =
+            estado.DerrotasSeguidas >= RegrasDaCarreira.DerrotasParaSerDispensado ||
+            estado.RecusasSeguidas >= RegrasDaCarreira.RecusasParaSerDispensado;
+
+        if (!foiCortado)
+        {
+            return null;
+        }
+
+        eventos.Add(EventoDaCarreira.Dispensado);
+
+        if (estado.Etapa == EtapaDaCarreira.CircuitoRegional)
+        {
+            return MotivoDoEncerramento.SemContrato;
+        }
+
+        estado.CairDeEtapa(estado.Etapa - 1);
+        eventos.Add(EventoDaCarreira.Rebaixado);
+
+        return null;
+    }
+
+    /// <summary>Fecha o ano quando o calendário do degrau se esgota.</summary>
+    private static void FecharTemporadaSeForOCaso(
+        Partida partida,
+        Carreira carreira,
+        int passo,
+        List<EventoDaCarreira> eventos)
+    {
+        var estado = carreira.Estado;
+
+        if (estado.CompromissosNaTemporada < RegrasDaCarreira.CompromissosPorTemporada(estado.Etapa))
+        {
+            return;
+        }
+
+        if (AvaliarMudancaDeCategoria(estado))
+        {
+            eventos.Add(EventoDaCarreira.MudouDeCategoria);
+        }
+
+        estado.VirarOAno(CurvaDeEvolucao.AplicarAno(
+            estado.Atributos,
+            partida.ExigirLutadorMontado().Atributos,
+            estado.Idade,
+            estado.NocautesSofridosNoAno,
+            Sortear(partida, passo, FinalidadeDaEvolucao)));
+
+        eventos.Add(EventoDaCarreira.AnoVirado);
     }
 
     /// <summary>
     /// Move o lutador na escala de degraus conforme o resultado. Vitórias
-    /// acumulam até a promoção; derrotas zeram o progresso e, se insistirem,
-    /// rebaixam.
+    /// acumulam até a promoção; qualquer tropeço zera o progresso.
     /// </summary>
-    private static void AvancarNaEscada(EstadoDaCarreira estado, ResultadoDaLuta resultado)
+    private static void AvancarNaEscada(
+        EstadoDaCarreira estado,
+        ResultadoDaLuta resultado,
+        List<EventoDaCarreira> eventos)
     {
         switch (resultado)
         {
             case ResultadoDaLuta.Vitoria:
-                PromoverAposVitoria(estado);
+                PromoverAposVitoria(estado, eventos);
                 break;
 
             case ResultadoDaLuta.Derrota:
-                RebaixarAposDerrota(estado);
+                RebaixarAposDerrota(estado, eventos);
                 break;
 
             case ResultadoDaLuta.Empate:
-                // Empate não muda nada de lugar: não promove nem rebaixa,
-                // apenas consome uma luta da temporada.
+                // Empate não muda ninguém de lugar: apenas consome um
+                // compromisso da temporada.
                 break;
         }
     }
 
-    private static void PromoverAposVitoria(EstadoDaCarreira estado)
+    private static void PromoverAposVitoria(EstadoDaCarreira estado, List<EventoDaCarreira> eventos)
     {
         switch (estado.Etapa)
         {
             case EtapaDaCarreira.DisputaDeCinturao:
                 estado.ConquistarCinturao();
+                eventos.Add(EventoDaCarreira.CinturaoConquistado);
                 break;
 
             case EtapaDaCarreira.Campeao:
                 estado.DefenderCinturao();
+                eventos.Add(EventoDaCarreira.CinturaoDefendido);
                 break;
 
             default:
-                if (estado.VitoriasNaEtapa >= VitoriasParaSubir[estado.Etapa])
+                if (estado.VitoriasNaEtapa >= RegrasDaCarreira.VitoriasParaSubir(estado.Etapa))
                 {
-                    estado.SubirDeEtapa(estado.Etapa + 1);
+                    var destino = estado.Etapa + 1;
+                    estado.SubirDeEtapa(destino);
+
+                    eventos.Add(destino == EtapaDaCarreira.DisputaDeCinturao
+                        ? EventoDaCarreira.DisputaDeCinturaoMarcada
+                        : EventoDaCarreira.Promovido);
                 }
 
                 break;
         }
     }
 
-    private static void RebaixarAposDerrota(EstadoDaCarreira estado)
+    /// <summary>
+    /// Perder o cinturão devolve o lutador ao topo do ranking, não ao começo. A
+    /// queda de degrau fora do título é assunto da dispensa, não da derrota
+    /// isolada.
+    /// </summary>
+    private static void RebaixarAposDerrota(EstadoDaCarreira estado, List<EventoDaCarreira> eventos)
     {
         switch (estado.Etapa)
         {
-            // Perder o cinturão devolve o lutador ao topo do ranking, não ao começo.
             case EtapaDaCarreira.Campeao:
+                estado.PerderPosicaoDeTitulo();
+                eventos.Add(EventoDaCarreira.CinturaoPerdido);
+                break;
+
             case EtapaDaCarreira.DisputaDeCinturao:
                 estado.PerderPosicaoDeTitulo();
                 break;
-
-            default:
-                if (estado.DerrotasSeguidas >= DerrotasParaCair && estado.Etapa > EtapaDaCarreira.CircuitoRegional)
-                {
-                    estado.CairDeEtapa(estado.Etapa - 1);
-                }
-
-                break;
         }
-    }
-
-    /// <summary>Fecha o ano: envelhece o lutador e reavalia a mudança de categoria.</summary>
-    private static void EncerrarTemporada(EstadoDaCarreira estado, Sorteio sorteio)
-    {
-        AvaliarMudancaDeCategoria(estado);
-        estado.Envelhecer(sorteio);
     }
 
     /// <summary>
@@ -214,170 +405,180 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// abandona o título atual e reentra na nova divisão como top 5 — subir de
     /// peso não vem com atalho.
     /// </summary>
-    private static void AvaliarMudancaDeCategoria(EstadoDaCarreira estado)
+    private static bool AvaliarMudancaDeCategoria(EstadoDaCarreira estado)
     {
         if (estado.JaMudouDeCategoria ||
             !estado.EhCampeao ||
             estado.DefesasNaCategoria < DefesasParaMudarDeCategoria ||
-            estado.Idade > IdadeMaximaParaMudarDeCategoria)
+            estado.Idade > IdadeMaximaParaMudarDeCategoria ||
+            Categorias.ProximaAcima(estado.Categoria) is not { } categoriaAcima)
         {
-            return;
+            return false;
         }
 
-        if (Categorias.ProximaAcima(estado.Categoria) is { } categoriaAcima)
-        {
-            estado.MudarDeCategoria(categoriaAcima, AjusteDeOverallPorSubirDeCategoria);
-        }
+        estado.MudarDeCategoria(categoriaAcima, AjusteDeOverallPorSubirDeCategoria);
+
+        return true;
     }
 
-    private static NivelDaOrganizacao DeterminarOrganizacao(EtapaDaCarreira etapa) => etapa switch
+    private void ColocarOfertasNaMesa(Partida partida, Carreira carreira)
     {
-        EtapaDaCarreira.CircuitoRegional => NivelDaOrganizacao.CircuitoRegional,
-        EtapaDaCarreira.OrganizacaoNacional => NivelDaOrganizacao.OrganizacaoNacional,
-        _ => NivelDaOrganizacao.GrandeOrganizacao
-    };
+        var sorteio = Sortear(partida, carreira.Estado.Passo, FinalidadeDasOfertas);
 
-    /// <summary>
-    /// Motivos para pendurar as luvas, do mais duro ao mais melancólico: a
-    /// idade limite, o corpo castigado, a sequência de derrotas do veterano e a
-    /// carreira que nunca saiu do lugar.
-    /// </summary>
-    private static bool DeveAposentar(EstadoDaCarreira estado) =>
-        estado.Idade >= IdadeLimiteDeCarreira ||
-        estado.TotalDeLutas >= MaximoDeLutas ||
-        (estado.Idade >= IdadeDeVeterano && estado.DerrotasSeguidas >= DerrotasParaCair) ||
-        (estado.Idade >= IdadeDeCorpoCastigado && estado.NocautesSofridos >= NocautesQueEncerramCarreira) ||
-        (estado.Idade >= IdadeParaDesistirSemResultado &&
-         estado.TotalDeLutas >= LutasMinimasAntesDeDesistir &&
-         estado.Vitorias < VitoriasMinimasParaSeguir);
+        carreira.ReceberOfertas(GerarOfertas(carreira, sorteio));
+    }
 
-    /// <summary>
-    /// Tudo que muda ao longo da carreira. Fica fora da entidade
-    /// <see cref="Carreira"/> de propósito: é andaime da simulação, não
-    /// informação que o jogador precise ver depois.
-    /// </summary>
-    private sealed class EstadoDaCarreira
+    private IReadOnlyList<OfertaDeLuta> GerarOfertas(Carreira carreira, Sorteio sorteio)
     {
-        /// <summary>
-        /// Atributos com que o lutador saiu do draft. Guardados para servir de
-        /// referência do teto de potencial em toda a carreira.
-        /// </summary>
-        private readonly Atributos _atributosDeEstreia;
+        var estado = carreira.Estado;
+        var disputaDeCinturao = estado.Etapa == EtapaDaCarreira.DisputaDeCinturao;
+        var defesaDeCinturao = estado.Etapa == EtapaDaCarreira.Campeao;
+        var valendoCinturao = disputaDeCinturao || defesaDeCinturao;
 
-        public EstadoDaCarreira(FichaDeInscricao ficha, LutadorCriado lutador)
+        var desvios = DesviosDeOverallPorOferta[RegrasDaCarreira.OfertasNaMesa(estado.Etapa)];
+        var ofertas = new List<OfertaDeLuta>(desvios.Count);
+
+        for (var posicao = 0; posicao < desvios.Count; posicao++)
         {
-            Nome = ficha.Nome;
-            Idade = ficha.IdadeInicial;
-            Categoria = ficha.CategoriaDePeso;
-            Atributos = lutador.Atributos;
-            OverallMaximo = lutador.Overall;
-            _atributosDeEstreia = lutador.Atributos;
-        }
-
-        public string Nome { get; }
-        public int Idade { get; private set; }
-        public Atributos Atributos { get; private set; }
-        public CategoriaDePeso Categoria { get; private set; }
-        public EtapaDaCarreira Etapa { get; private set; } = EtapaDaCarreira.CircuitoRegional;
-
-        public decimal OverallMaximo { get; private set; }
-        public int TotalDeLutas { get; private set; }
-        public int Vitorias { get; private set; }
-        public int VitoriasNaEtapa { get; private set; }
-        public int DerrotasSeguidas { get; private set; }
-        public int NocautesSofridos { get; private set; }
-        public int DefesasNaCategoria { get; private set; }
-
-        public bool EhCampeao { get; private set; }
-        public bool JaMudouDeCategoria { get; private set; }
-        public int AjusteDeOverallDoAdversario { get; private set; }
-
-        private int _nocautesSofridosNoAno;
-
-        public void RegistrarResultado(ResultadoDaLutaSimulada desfecho)
-        {
-            TotalDeLutas++;
-
-            switch (desfecho.Resultado)
-            {
-                case ResultadoDaLuta.Vitoria:
-                    Vitorias++;
-                    VitoriasNaEtapa++;
-                    DerrotasSeguidas = 0;
-                    break;
-
-                case ResultadoDaLuta.Derrota:
-                    DerrotasSeguidas++;
-                    VitoriasNaEtapa = 0;
-
-                    if (desfecho.Metodo == MetodoDeEncerramento.Nocaute)
-                    {
-                        NocautesSofridos++;
-                        _nocautesSofridosNoAno++;
-                    }
-
-                    break;
-
-                case ResultadoDaLuta.Empate:
-                    VitoriasNaEtapa = 0;
-                    break;
-            }
-        }
-
-        public void SubirDeEtapa(EtapaDaCarreira destino)
-        {
-            Etapa = destino;
-            VitoriasNaEtapa = 0;
-        }
-
-        public void CairDeEtapa(EtapaDaCarreira destino)
-        {
-            Etapa = destino;
-            VitoriasNaEtapa = 0;
-            DerrotasSeguidas = 0;
-        }
-
-        public void ConquistarCinturao()
-        {
-            Etapa = EtapaDaCarreira.Campeao;
-            EhCampeao = true;
-            VitoriasNaEtapa = 0;
-            DefesasNaCategoria = 0;
-        }
-
-        public void DefenderCinturao() => DefesasNaCategoria++;
-
-        public void PerderPosicaoDeTitulo()
-        {
-            Etapa = EtapaDaCarreira.Top5;
-            EhCampeao = false;
-            VitoriasNaEtapa = 0;
-        }
-
-        public void MudarDeCategoria(CategoriaDePeso destino, int ajusteDeOverall)
-        {
-            Categoria = destino;
-            Etapa = EtapaDaCarreira.Top5;
-            EhCampeao = false;
-            JaMudouDeCategoria = true;
-            VitoriasNaEtapa = 0;
-            DefesasNaCategoria = 0;
-            AjusteDeOverallDoAdversario = ajusteDeOverall;
-        }
-
-        public void Envelhecer(Sorteio sorteio)
-        {
-            Atributos = CurvaDeEvolucao.AplicarAno(
-                Atributos,
-                _atributosDeEstreia,
-                Idade,
-                _nocautesSofridosNoAno,
+            var perfil = geradorDeAdversarios.Gerar(
+                estado.Etapa,
+                estado.AjusteDeOverallDoAdversario + desvios[posicao],
                 sorteio);
 
-            _nocautesSofridosNoAno = 0;
-            Idade++;
-
-            OverallMaximo = Math.Max(OverallMaximo, CalculadoraDeOverall.Calcular(Atributos));
+            ofertas.Add(new OfertaDeLuta(
+                indice: posicao + 1,
+                adversario: perfil.Nome,
+                cartelDoAdversario: geradorDeAdversarios.GerarCartel(estado.Etapa, sorteio),
+                atributosDoAdversario: perfil.Atributos,
+                organizacao: RegrasDaCarreira.OrganizacaoDe(estado.Etapa),
+                categoria: estado.Categoria,
+                disputaDeCinturao: disputaDeCinturao,
+                defesaDeCinturao: defesaDeCinturao,
+                roundsProgramados: valendoCinturao ? RoundsDeLutaDeCinturao : RoundsDeLutaComum,
+                chamada: MontarChamada(carreira, disputaDeCinturao, defesaDeCinturao, desvios[posicao])));
         }
+
+        return ofertas;
     }
+
+    /// <summary>Como a organização venderia esta luta no cartaz.</summary>
+    private static string MontarChamada(
+        Carreira carreira,
+        bool disputaDeCinturao,
+        bool defesaDeCinturao,
+        int desvioDeOverall)
+    {
+        if (disputaDeCinturao)
+        {
+            var categoria = Categorias.NomeDeExibicao(carreira.Estado.Categoria).ToLowerInvariant();
+
+            return $"Disputa do cinturão dos {categoria}s";
+        }
+
+        if (defesaDeCinturao)
+        {
+            return "Defesa de cinturão";
+        }
+
+        if (carreira.TotalDeLutas == 0)
+        {
+            return "Estreia no card preliminar";
+        }
+
+        return desvioDeOverall switch
+        {
+            < 0 => "Luta segura contra um nome abaixo do seu",
+            > 0 => "Nome forte da divisão — vencer acelera a fila",
+            _ => "Luta do card principal"
+        };
+    }
+
+    /// <summary>
+    /// A oferta de overall mais próximo do lutador. É o critério do jogador
+    /// automático: a luta que mais mede alguma coisa.
+    /// </summary>
+    private static OfertaDeLuta EscolherOfertaMaisEquilibrada(Carreira carreira)
+    {
+        var overall = carreira.Estado.OverallAtual;
+
+        return carreira.Ofertas
+            .OrderBy(oferta => Math.Abs(oferta.OverallDoAdversario - overall))
+            .ThenBy(oferta => oferta.Indice)
+            .First();
+    }
+
+    /// <summary>
+    /// Quanto esta vitória adianta na fila. Bater alguém acima do próprio nível
+    /// vale por duas lutas — é o que compensa o risco de aceitar a oferta dura
+    /// em vez da confortável.
+    /// </summary>
+    private static int PesoDaVitoria(EstadoDaCarreira estado, OfertaDeLuta oferta) =>
+        oferta.OverallDoAdversario >= estado.OverallAtual + VantagemQueValeDobro ? 2 : 1;
+
+    /// <summary>
+    /// Motivos para pendurar as luvas, do mais duro ao mais melancólico: a idade
+    /// limite, o corpo castigado, a sequência de derrotas do veterano e a
+    /// carreira que nunca saiu do lugar.
+    /// </summary>
+    private static MotivoDoEncerramento? MotivoParaAposentar(Carreira carreira)
+    {
+        var estado = carreira.Estado;
+
+        if (estado.Idade >= IdadeLimiteDeCarreira)
+        {
+            return MotivoDoEncerramento.IdadeLimite;
+        }
+
+        if (carreira.TotalDeLutas >= MaximoDeLutas)
+        {
+            return MotivoDoEncerramento.LimiteDeLutas;
+        }
+
+        if (estado.Idade >= IdadeDeCorpoCastigado && estado.NocautesSofridos >= NocautesQueEncerramCarreira)
+        {
+            return MotivoDoEncerramento.CorpoCastigado;
+        }
+
+        if (estado.Idade >= IdadeDeVeterano && estado.DerrotasSeguidas >= DerrotasQueAposentamVeterano)
+        {
+            return MotivoDoEncerramento.SequenciaDeDerrotas;
+        }
+
+        if (estado.Idade >= IdadeParaDesistirSemResultado &&
+            carreira.TotalDeLutas >= LutasMinimasAntesDeDesistir &&
+            carreira.Vitorias < VitoriasMinimasParaSeguir)
+        {
+            return MotivoDoEncerramento.SemResultados;
+        }
+
+        return null;
+    }
+
+    private static void EncerrarCarreira(
+        Partida partida,
+        Carreira carreira,
+        MotivoDoEncerramento motivo,
+        List<EventoDaCarreira> eventos)
+    {
+        carreira.Encerrar(motivo);
+        CalculadoraDeLegado.Aplicar(carreira);
+
+        // O motor também roda sobre partidas que nunca foram persistidas — os
+        // testes de balanceamento simulam milhares delas sem tocar em banco. Só
+        // mexe no status de quem de fato estreou pela via normal.
+        if (partida.CarreiraEstaEmAndamento)
+        {
+            partida.EncerrarCarreira();
+        }
+
+        eventos.Add(EventoDaCarreira.CarreiraEncerrada);
+    }
+
+    /// <summary>
+    /// Deriva a semente de um sorteio a partir da partida, do número do passo e
+    /// da finalidade. Aritmética simples de propósito: precisa dar o mesmo
+    /// número em qualquer máquina e em qualquer execução.
+    /// </summary>
+    private static Sorteio Sortear(Partida partida, int passo, int finalidade) =>
+        new(unchecked((partida.SeedDaCarreira * 31) + (passo * 7919) + finalidade));
 }

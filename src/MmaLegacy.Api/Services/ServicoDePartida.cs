@@ -71,13 +71,17 @@ public sealed class ServicoDePartida(ContextoDoJogo contexto)
     /// </remarks>
     private async Task<IReadOnlyList<Lutador>> SortearAtletasAsync(int seed, CancellationToken cancelamento)
     {
+        // Só o elenco do draft entra no sorteio. O resto do acervo existe para o
+        // ranking e para os adversários da carreira — sortear o décimo quarto
+        // colocado de uma divisão transformaria a escolha do jogador em chute.
         var acervo = await contexto.Lutadores
+            .Where(lutador => lutador.SorteavelNoDraft)
             .OrderBy(lutador => lutador.Slug)
             .ToListAsync(cancelamento);
 
         RegraDeNegocioException.Se(
             acervo.Count < Habilidades.Quantidade,
-            $"O acervo tem apenas {acervo.Count} atletas cadastrados e o draft precisa de " +
+            $"O elenco do draft tem apenas {acervo.Count} atletas sorteáveis e o draft precisa de " +
             $"{Habilidades.Quantidade}. Rode o seed do banco antes de iniciar uma partida.");
 
         return new Sorteio(seed).Embaralhar(acervo).Take(Habilidades.Quantidade).ToList();

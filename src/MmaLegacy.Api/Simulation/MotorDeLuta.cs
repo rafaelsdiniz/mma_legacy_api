@@ -89,6 +89,7 @@ public sealed class MotorDeLuta
 
         var euh = new EstadoDoLutador(protagonista);
         var ele = new EstadoDoLutador(adversario);
+        var rounds = new List<RoundDaLuta>(roundsProgramados);
 
         for (var round = 1; round <= roundsProgramados; round++)
         {
@@ -107,16 +108,67 @@ public sealed class MotorDeLuta
 
             if (desfecho is not null)
             {
-                return desfecho;
+                rounds.Add(RegistrarRound(
+                    round,
+                    euh,
+                    ele,
+                    minhaAcao,
+                    acaoDele,
+                    VencedorPeloDesfecho(desfecho.Resultado),
+                    desfecho.Metodo));
+
+                return desfecho with { Rounds = rounds };
             }
 
-            PontuarRound(euh, ele, minhaAcao, acaoDele);
+            var vencedorDoRound = PontuarRound(euh, ele, minhaAcao, acaoDele);
             AplicarDesgaste(euh, minhaAcao);
             AplicarDesgaste(ele, acaoDele);
+
+            rounds.Add(RegistrarRound(round, euh, ele, minhaAcao, acaoDele, vencedorDoRound, encerramento: null));
         }
 
-        return DecidirNosPontos(euh, ele, roundsProgramados);
+        return DecidirNosPontos(euh, ele, roundsProgramados) with { Rounds = rounds };
     }
+
+    /// <summary>
+    /// Fotografa o round: o que cada um tentou e como os dois chegaram ao fim
+    /// dele. Nos rounds completos os números de fadiga e dano já são os de
+    /// depois do desgaste; no round que encerra a luta são os do momento em que
+    /// ela parou.
+    /// </summary>
+    private static RoundDaLuta RegistrarRound(
+        int numero,
+        EstadoDoLutador euh,
+        EstadoDoLutador ele,
+        AcaoDoRound minhaAcao,
+        AcaoDoRound acaoDele,
+        VencedorDoRound vencedor,
+        MetodoDeEncerramento? encerramento) => new(
+        numero,
+        vencedor,
+        minhaAcao.BuscouQueda,
+        minhaAcao.Controlou,
+        acaoDele.BuscouQueda,
+        acaoDele.Controlou,
+        EmPercentual(euh.Fadiga),
+        EmPercentual(ele.Fadiga),
+        EmPercentual(euh.Dano),
+        EmPercentual(ele.Dano),
+        encerramento);
+
+    private static int EmPercentual(double fracao) =>
+        (int)Math.Round(Math.Clamp(fracao, 0, 1) * 100, MidpointRounding.AwayFromZero);
+
+    /// <summary>
+    /// Quem levou o round que acabou em finalização ou nocaute: quem terminou a
+    /// luta. Não há cartão a preencher quando o juiz interrompe.
+    /// </summary>
+    private static VencedorDoRound VencedorPeloDesfecho(ResultadoDaLuta resultado) => resultado switch
+    {
+        ResultadoDaLuta.Vitoria => VencedorDoRound.Lutador,
+        ResultadoDaLuta.Derrota => VencedorDoRound.Adversario,
+        _ => VencedorDoRound.Nenhum
+    };
 
     /// <summary>
     /// Calcula o que um lutador produziu no round: quanta ofensiva em pé, se
@@ -234,7 +286,8 @@ public sealed class MotorDeLuta
     /// Decide quem levou o round e transfere dano para quem perdeu. Rounds
     /// muito parelhos não pontuam para ninguém, o que abre espaço para empates.
     /// </summary>
-    private static void PontuarRound(
+    /// <returns>Quem levou o round, para o registro round a round.</returns>
+    private static VencedorDoRound PontuarRound(
         EstadoDoLutador euh,
         EstadoDoLutador ele,
         AcaoDoRound minhaAcao,
@@ -249,12 +302,14 @@ public sealed class MotorDeLuta
 
         if (Math.Abs(diferenca) < MargemDeRoundEquilibrado)
         {
-            return;
+            return VencedorDoRound.Nenhum;
         }
 
         var (vencedor, perdedor) = diferenca > 0 ? (euh, ele) : (ele, euh);
         vencedor.VencerRound();
         perdedor.AcumularDano(Math.Abs(diferenca), vencedor.Perfil.Atributos[Habilidade.Potencia]);
+
+        return diferenca > 0 ? VencedorDoRound.Lutador : VencedorDoRound.Adversario;
     }
 
     private static double CalcularEfeito(AcaoDoRound acao) =>

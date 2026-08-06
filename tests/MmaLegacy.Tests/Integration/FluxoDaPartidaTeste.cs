@@ -29,7 +29,8 @@ public sealed class FluxoDaPartidaTeste : IDisposable
         var partidaId = await CriarPartidaAsync(seed: 20260805);
 
         await CompletarDraftAsync(partidaId);
-        await SimularCarreiraAsync(partidaId);
+        await EstrearAsync(partidaId);
+        await SimularORestoAsync(partidaId);
 
         // Contexto novo: obriga o EF a remontar o agregado a partir das tabelas.
         await using var contexto = _banco.CriarContexto();
@@ -43,10 +44,115 @@ public sealed class FluxoDaPartidaTeste : IDisposable
         lutador.Overall.Should().BeGreaterThan(0);
         lutador.Atributos.Listar().Should().HaveCount(Habilidades.Quantidade);
 
-        var carreira = partida.ExigirCarreiraSimulada();
+        var carreira = partida.ExigirCarreiraEncerrada();
         carreira.Lutas.Should().NotBeEmpty();
         carreira.Legado.Should().BeDefined();
+        carreira.MotivoDoEncerramento.Should().NotBeNull();
+        carreira.Ofertas.Should().BeEmpty();
         (carreira.Vitorias + carreira.Derrotas + carreira.Empates).Should().Be(carreira.TotalDeLutas);
+    }
+
+    [Fact]
+    public async Task AEstreiaPoeOfertasNaMesaESobreviveARecarregarAPagina()
+    {
+        var partidaId = await CriarPartidaAsync(seed: 20260805);
+        await CompletarDraftAsync(partidaId);
+
+        var estreia = await EstrearAsync(partidaId);
+        estreia.Ofertas.Should().NotBeEmpty();
+        estreia.Encerrada.Should().BeFalse();
+
+        // Contexto novo: as ofertas precisam voltar do banco iguais, com os
+        // atributos do adversário intactos. É o que sustenta a carreira jogada
+        // entre requisições.
+        await using var contexto = _banco.CriarContexto();
+        var partida = await new ServicoDePartida(contexto).ObterAsync(partidaId);
+        var carreira = partida.ExigirCarreira();
+
+        partida.Status.Should().Be(StatusDaPartida.CarreiraEmAndamento);
+        carreira.Ofertas.Should().HaveCount(estreia.Ofertas.Count);
+        carreira.Ofertas[0].Adversario.Should().Be(estreia.Ofertas[0].Adversario);
+        carreira.Ofertas[0].OverallDoAdversario.Should().Be(estreia.Ofertas[0].OverallDoAdversario);
+        carreira.Estado.Idade.Should().Be(carreira.IdadeDeEstreia);
+    }
+
+    [Fact]
+    public async Task EstrearDuasVezesNaoSorteiaOutraVidaParaOMesmoLutador()
+    {
+        var partidaId = await CriarPartidaAsync(seed: 4242);
+        await CompletarDraftAsync(partidaId);
+
+        var primeira = await EstrearAsync(partidaId);
+        var segunda = await EstrearAsync(partidaId);
+
+        segunda.Ofertas[0].Adversario.Should().Be(primeira.Ofertas[0].Adversario);
+
+        await using var contexto = _banco.CriarContexto();
+        contexto.Carreiras.Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task AceitarUmaOfertaGeraUmaLutaEUmaNovaRodadaDeOfertas()
+    {
+        var partidaId = await CriarPartidaAsync(seed: 77);
+        await CompletarDraftAsync(partidaId);
+        await EstrearAsync(partidaId);
+
+        Carreira carreira;
+        MmaLegacy.Api.Simulation.PassoDaCarreira passo;
+
+        await using (var contexto = _banco.CriarContexto())
+        {
+            var jogada = await MontarServicoDeCarreira(contexto).AceitarAsync(partidaId, indiceDaOferta: 1);
+            carreira = jogada.Partida.ExigirCarreira();
+            passo = jogada.Passo;
+        }
+
+        passo.Luta.Should().NotBeNull();
+        passo.Desfecho!.Rounds.Should().NotBeEmpty();
+        carreira.TotalDeLutas.Should().Be(1);
+        carreira.Ofertas.Should().NotBeEmpty();
+
+        // A oferta aceita sai da mesa: a rodada seguinte é gente nova.
+        carreira.Ofertas.Should().NotContain(oferta => oferta.Adversario == passo.Luta!.Adversario);
+    }
+
+    [Fact]
+    public async Task RecusarTresRodadasSeguidasNoRegionalEncerraACarreiraSemContrato()
+    {
+        var partidaId = await CriarPartidaAsync(seed: 909);
+        await CompletarDraftAsync(partidaId);
+        await EstrearAsync(partidaId);
+
+        for (var recusa = 0; recusa < 3; recusa++)
+        {
+            await using var contexto = _banco.CriarContexto();
+            await MontarServicoDeCarreira(contexto).RecusarAsync(partidaId);
+        }
+
+        await using var leitura = _banco.CriarContexto();
+        var carreira = (await new ServicoDePartida(leitura).ObterAsync(partidaId)).ExigirCarreira();
+
+        carreira.Encerrada.Should().BeTrue();
+        carreira.MotivoDoEncerramento.Should().Be(MotivoDoEncerramento.SemContrato);
+        carreira.TotalDeLutas.Should().Be(0);
+        carreira.Ofertas.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task NaoJogaCarreiraDeUmLutadorQueAindaNaoEstreou()
+    {
+        var partidaId = await CriarPartidaAsync(seed: 31);
+        await CompletarDraftAsync(partidaId);
+
+        await using var contexto = _banco.CriarContexto();
+
+        var jogadaPrematura = async () =>
+            await MontarServicoDeCarreira(contexto).AceitarAsync(partidaId, indiceDaOferta: 1);
+
+        await jogadaPrematura.Should()
+            .ThrowAsync<RegraDeNegocioException>()
+            .WithMessage("*ainda não estreou*");
     }
 
     [Fact]
@@ -83,32 +189,35 @@ public sealed class FluxoDaPartidaTeste : IDisposable
     }
 
     [Fact]
-    public async Task SimularDuasVezesDevolveAMesmaCarreiraSemDuplicar()
+    public async Task AMesmaSementeJogaAMesmaCarreiraDoComecoAoFim()
     {
-        var partidaId = await CriarPartidaAsync(seed: 99);
-        await CompletarDraftAsync(partidaId);
+        var primeiraId = await CriarPartidaAsync(seed: 99);
+        var segundaId = await CriarPartidaAsync(seed: 99);
 
-        var primeira = await SimularCarreiraAsync(partidaId);
-        var segunda = await SimularCarreiraAsync(partidaId);
+        await CompletarDraftAsync(primeiraId);
+        await CompletarDraftAsync(segundaId);
 
-        segunda.Id.Should().Be(primeira.Id);
+        var primeira = await JogarCarreiraInteiraAsync(primeiraId);
+        var segunda = await JogarCarreiraInteiraAsync(segundaId);
+
         segunda.Cartel.Should().Be(primeira.Cartel);
-
-        await using var contexto = _banco.CriarContexto();
-        contexto.Carreiras.Count().Should().Be(1);
+        segunda.IdadeDeAposentadoria.Should().Be(primeira.IdadeDeAposentadoria);
+        segunda.MotivoDoEncerramento.Should().Be(primeira.MotivoDoEncerramento);
+        segunda.Lutas.Select(luta => luta.Adversario)
+            .Should().Equal(primeira.Lutas.Select(luta => luta.Adversario));
     }
 
     [Fact]
-    public async Task NaoSimulaCarreiraComODraftPelaMetade()
+    public async Task NaoEstreiaCarreiraComODraftPelaMetade()
     {
         var partidaId = await CriarPartidaAsync(seed: 5);
 
         await using var contexto = _banco.CriarContexto();
         var servico = MontarServicoDeCarreira(contexto);
 
-        var simulacaoPrematura = async () => await servico.SimularAsync(partidaId);
+        var estreiaPrematura = async () => await servico.EstrearAsync(partidaId);
 
-        await simulacaoPrematura.Should()
+        await estreiaPrematura.Should()
             .ThrowAsync<RegraDeNegocioException>()
             .WithMessage("*faltam 8 escolha*");
     }
@@ -178,11 +287,26 @@ public sealed class FluxoDaPartidaTeste : IDisposable
         }
     }
 
-    private async Task<Carreira> SimularCarreiraAsync(Guid partidaId)
+    private async Task<Carreira> EstrearAsync(Guid partidaId)
     {
         await using var contexto = _banco.CriarContexto();
 
-        return await MontarServicoDeCarreira(contexto).SimularAsync(partidaId);
+        return (await MontarServicoDeCarreira(contexto).EstrearAsync(partidaId)).ExigirCarreira();
+    }
+
+    private async Task<Carreira> SimularORestoAsync(Guid partidaId)
+    {
+        await using var contexto = _banco.CriarContexto();
+        var jogada = await MontarServicoDeCarreira(contexto).SimularORestoAsync(partidaId);
+
+        return jogada.Partida.ExigirCarreira();
+    }
+
+    private async Task<Carreira> JogarCarreiraInteiraAsync(Guid partidaId)
+    {
+        await EstrearAsync(partidaId);
+
+        return await SimularORestoAsync(partidaId);
     }
 
     private static ServicoDeCarreira MontarServicoDeCarreira(ContextoDoJogo contexto) => new(

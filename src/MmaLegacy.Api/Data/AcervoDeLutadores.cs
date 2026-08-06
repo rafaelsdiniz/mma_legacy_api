@@ -87,6 +87,14 @@ public static class AcervoDeLutadores
                 : manual;
         }
 
+        // O draft é sobre reconhecer quem está na sua frente, então quem entra
+        // no sorteio é decidido à mão em ElencoDoDraft. Todo o resto continua no
+        // acervo: sustenta o ranking e o elenco de adversários da carreira.
+        foreach (var atleta in acervo.Values)
+        {
+            atleta.DefinirSorteioNoDraft(ElencoDoDraft.Contem(atleta));
+        }
+
         return [.. acervo.Values];
     }
 

@@ -108,13 +108,91 @@ public sealed class ContratoHttpTeste : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SimularCarreiraAntesDeTerminarODraftDevolve409()
+    public async Task EstrearAntesDeTerminarODraftDevolve409()
     {
         var partidaId = await CriarPartidaAsync();
 
-        var resposta = await _cliente.PostAsync($"/api/partidas/{partidaId}/carreira/simular", null);
+        var resposta = await _cliente.PostAsync($"/api/partidas/{partidaId}/carreira/estrear", null);
 
         resposta.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task PedirOResultadoComACarreiraEmAndamentoDevolve409()
+    {
+        var partidaId = await CriarPartidaAsync();
+        await CompletarDraftAsync(partidaId);
+        await EstrearAsync(partidaId);
+
+        var resposta = await _cliente.GetAsync($"/api/partidas/{partidaId}/resultado");
+
+        resposta.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await LerJsonAsync(resposta)).GetProperty("detail").GetString()
+            .Should().Contain("ainda está em andamento");
+    }
+
+    [Fact]
+    public async Task AEstreiaDevolveOfertaDeLutaComOAdversarioDescrito()
+    {
+        var partidaId = await CriarPartidaAsync();
+        await CompletarDraftAsync(partidaId);
+
+        var corpo = await EstrearAsync(partidaId);
+
+        corpo.GetProperty("encerrada").GetBoolean().Should().BeFalse();
+        corpo.GetProperty("estado").GetProperty("etapa").GetString().Should().Be("CircuitoRegional");
+
+        var ofertas = corpo.GetProperty("ofertas");
+        ofertas.GetArrayLength().Should().Be(1);
+
+        var oferta = ofertas[0];
+        oferta.GetProperty("indice").GetInt32().Should().Be(1);
+        oferta.GetProperty("adversario").GetString().Should().NotBeNullOrWhiteSpace();
+        oferta.GetProperty("cartelDoAdversario").GetString().Should().MatchRegex(@"^\d+-\d+-\d+$");
+        oferta.GetProperty("atributosDoAdversario").GetArrayLength().Should().Be(8);
+        oferta.GetProperty("roundsProgramados").GetInt32().Should().Be(3);
+        oferta.GetProperty("chamada").GetString().Should().Be("Estreia no card preliminar");
+    }
+
+    [Fact]
+    public async Task AceitarUmaOfertaDevolveALutaRoundARound()
+    {
+        var partidaId = await CriarPartidaAsync();
+        await CompletarDraftAsync(partidaId);
+        await EstrearAsync(partidaId);
+
+        var resposta = await _cliente.PostAsJsonAsync(
+            $"/api/partidas/{partidaId}/carreira/aceitar",
+            new { indice = 1 });
+
+        resposta.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var corpo = await LerJsonAsync(resposta);
+        var ultimaLuta = corpo.GetProperty("ultimaLuta");
+
+        ultimaLuta.GetProperty("luta").GetProperty("ordem").GetInt32().Should().Be(1);
+        ultimaLuta.GetProperty("rounds").GetArrayLength().Should().BeGreaterThan(0);
+        ultimaLuta.GetProperty("rounds")[0].GetProperty("vencedor").ValueKind
+            .Should().Be(JsonValueKind.String);
+
+        corpo.GetProperty("carreira").GetProperty("cartel").GetString()
+            .Should().MatchRegex(@"^\d+-\d+-\d+$");
+        corpo.GetProperty("ofertas").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task AceitarUmaOfertaQueNaoEstaNaMesaDevolve409()
+    {
+        var partidaId = await CriarPartidaAsync();
+        await CompletarDraftAsync(partidaId);
+        await EstrearAsync(partidaId);
+
+        var resposta = await _cliente.PostAsJsonAsync(
+            $"/api/partidas/{partidaId}/carreira/aceitar",
+            new { indice = 9 });
+
+        resposta.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await LerJsonAsync(resposta)).GetProperty("detail").GetString().Should().Contain("oferta 9");
     }
 
     [Fact]
@@ -122,17 +200,13 @@ public sealed class ContratoHttpTeste : IAsyncLifetime
     {
         var partidaId = await CriarPartidaAsync();
 
-        for (var rodada = 0; rodada < 8; rodada++)
-        {
-            var atual = await ObterRodadaAtualAsync(partidaId);
-            var habilidade = atual.GetProperty("habilidadesDisponiveis")[0].GetString()!;
+        await CompletarDraftAsync(partidaId);
+        await EstrearAsync(partidaId);
 
-            (await EscolherAsync(partidaId, IdDoAtleta(atual), habilidade))
-                .StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-
-        var simulacao = await _cliente.PostAsync($"/api/partidas/{partidaId}/carreira/simular", null);
+        var simulacao = await _cliente.PostAsync(
+            $"/api/partidas/{partidaId}/carreira/simular-o-resto", null);
         simulacao.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await LerJsonAsync(simulacao)).GetProperty("encerrada").GetBoolean().Should().BeTrue();
 
         var resultado = await _cliente.GetAsync($"/api/partidas/{partidaId}/resultado");
         resultado.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -161,6 +235,27 @@ public sealed class ContratoHttpTeste : IAsyncLifetime
         resposta.EnsureSuccessStatusCode();
 
         return (await LerJsonAsync(resposta)).GetProperty("id").GetGuid();
+    }
+
+    /// <summary>Percorre as oito rodadas pegando sempre a primeira habilidade livre.</summary>
+    private async Task CompletarDraftAsync(Guid partidaId)
+    {
+        for (var rodada = 0; rodada < 8; rodada++)
+        {
+            var atual = await ObterRodadaAtualAsync(partidaId);
+            var habilidade = atual.GetProperty("habilidadesDisponiveis")[0].GetString()!;
+
+            (await EscolherAsync(partidaId, IdDoAtleta(atual), habilidade))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+    }
+
+    private async Task<JsonElement> EstrearAsync(Guid partidaId)
+    {
+        var resposta = await _cliente.PostAsync($"/api/partidas/{partidaId}/carreira/estrear", null);
+        resposta.EnsureSuccessStatusCode();
+
+        return await LerJsonAsync(resposta);
     }
 
     private async Task<JsonElement> ObterRodadaAtualAsync(Guid partidaId)
