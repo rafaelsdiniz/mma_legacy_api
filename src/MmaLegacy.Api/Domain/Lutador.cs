@@ -31,12 +31,27 @@ public sealed class Lutador
 
     public Atributos Atributos { get; private set; } = null!;
 
+    /// <summary>
+    /// Atleta histórico, fora de atividade.
+    /// </summary>
+    /// <remarks>
+    /// Lendas aparecem no draft — o jogo é sobre roubar habilidades das maiores
+    /// referências do MMA, e isso não tem data de validade. Mas elas nunca são
+    /// sorteadas como adversárias da carreira: Anderson Silva pode ceder o
+    /// striking dele ao seu lutador, e não disputar um cinturão em 2027.
+    /// <para>
+    /// É também o que sustenta o modo Lendas, em que só este grupo entra no
+    /// sorteio.
+    /// </para>
+    /// </remarks>
+    public bool EhLenda { get; private set; }
+
     /// <summary>Construtor sem parâmetros exigido pelo Entity Framework.</summary>
     private Lutador()
     {
     }
 
-    public Lutador(string nome, string pais, Atributos atributos)
+    public Lutador(string nome, string pais, Atributos atributos, bool ehLenda = false)
     {
         ArgumentNullException.ThrowIfNull(atributos);
 
@@ -45,6 +60,7 @@ public sealed class Lutador
         Slug = GerarSlug(Nome);
         Id = GerarIdDeterministico(Slug);
         Atributos = atributos;
+        EhLenda = ehLenda;
     }
 
     /// <summary>

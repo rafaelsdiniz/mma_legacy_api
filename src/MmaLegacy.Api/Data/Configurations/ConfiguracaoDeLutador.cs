@@ -16,6 +16,12 @@ public sealed class ConfiguracaoDeLutador : IEntityTypeConfiguration<Lutador>
         construtor.Property(lutador => lutador.Id).ValueGeneratedNever();
 
         construtor.Property(lutador => lutador.Nome).HasMaxLength(80).IsRequired();
+        // Atletas cadastrados antes deste campo existir entram como em
+        // atividade, que é como o jogo os tratava.
+        construtor.Property(lutador => lutador.EhLenda)
+            .IsRequired()
+            .HasDefaultValue(false);
+
         construtor.Property(lutador => lutador.Pais).HasMaxLength(60).IsRequired();
         construtor.Property(lutador => lutador.Slug).HasMaxLength(80).IsRequired();
 
