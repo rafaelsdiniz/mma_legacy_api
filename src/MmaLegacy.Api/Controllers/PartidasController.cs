@@ -22,7 +22,11 @@ public sealed class PartidasController(ServicoDePartida servicoDePartida) : Cont
         [FromBody] CriarPartidaRequisicao requisicao,
         CancellationToken cancelamento)
     {
-        var partida = await servicoDePartida.CriarAsync(requisicao.ParaFicha(), requisicao.Seed, cancelamento);
+        var partida = await servicoDePartida.CriarAsync(
+            requisicao.ParaFicha(),
+            requisicao.Seed,
+            requisicao.NivelDeDificuldade ?? Domain.Enums.NivelDeDificuldade.Facil,
+            cancelamento);
 
         return CreatedAtAction(
             nameof(Obter),

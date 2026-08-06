@@ -30,6 +30,16 @@ public sealed class Partida
 
     public StatusDaPartida Status { get; private set; }
 
+    /// <summary>
+    /// Quanta informação o jogador vê durante o draft.
+    /// </summary>
+    /// <remarks>
+    /// Fica na partida, e não na ficha, porque é regra de jogo e não identidade
+    /// do lutador. Escolhida na criação e imutável depois: trocar de nível no
+    /// meio do draft permitiria espiar as notas no fácil e voltar para o difícil.
+    /// </remarks>
+    public NivelDeDificuldade NivelDeDificuldade { get; private set; }
+
     public FichaDeInscricao Ficha { get; private set; } = null!;
 
     /// <summary>O lutador montado. Só existe depois da oitava escolha.</summary>
@@ -65,10 +75,15 @@ public sealed class Partida
     /// <param name="ficha">Identidade do lutador informada pelo jogador.</param>
     /// <param name="seed">Semente que fixa este sorteio.</param>
     /// <param name="atletasSorteados">Os oito atletas, na ordem em que serão apresentados.</param>
-    public static Partida Iniciar(FichaDeInscricao ficha, int seed, IReadOnlyList<Lutador> atletasSorteados)
+    public static Partida Iniciar(
+        FichaDeInscricao ficha,
+        int seed,
+        IReadOnlyList<Lutador> atletasSorteados,
+        NivelDeDificuldade nivelDeDificuldade = NivelDeDificuldade.Facil)
     {
         ArgumentNullException.ThrowIfNull(ficha);
         ArgumentNullException.ThrowIfNull(atletasSorteados);
+        DadoInvalidoException.ExigirEnumValido(nivelDeDificuldade, nameof(nivelDeDificuldade));
 
         RegraDeNegocioException.Se(
             atletasSorteados.Count != Habilidades.Quantidade,
@@ -85,7 +100,8 @@ public sealed class Partida
             Seed = seed,
             CriadaEm = DateTimeOffset.UtcNow,
             Status = StatusDaPartida.DraftEmAndamento,
-            Ficha = ficha
+            Ficha = ficha,
+            NivelDeDificuldade = nivelDeDificuldade
         };
 
         for (var ordem = 0; ordem < atletasSorteados.Count; ordem++)

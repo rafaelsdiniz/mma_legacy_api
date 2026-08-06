@@ -20,16 +20,21 @@ public sealed class ServicoDePartida(ContextoDoJogo contexto)
     /// Semente da partida. Quando omitida, é sorteada. Informá-la permite
     /// reproduzir uma partida específica e é o que sustenta o draft diário.
     /// </param>
+    /// <param name="nivelDeDificuldade">
+    /// Se as notas aparecem durante o draft. Não altera a simulação: dois
+    /// lutadores idênticos montados em níveis diferentes têm a mesma carreira.
+    /// </param>
     public async Task<Partida> CriarAsync(
         FichaDeInscricao ficha,
         int? seed,
+        NivelDeDificuldade nivelDeDificuldade = NivelDeDificuldade.Facil,
         CancellationToken cancelamento = default)
     {
         ArgumentNullException.ThrowIfNull(ficha);
 
         var sementeDaPartida = seed ?? Random.Shared.Next();
         var sorteados = await SortearAtletasAsync(sementeDaPartida, cancelamento);
-        var partida = Partida.Iniciar(ficha, sementeDaPartida, sorteados);
+        var partida = Partida.Iniciar(ficha, sementeDaPartida, sorteados, nivelDeDificuldade);
 
         contexto.Partidas.Add(partida);
         await contexto.SaveChangesAsync(cancelamento);

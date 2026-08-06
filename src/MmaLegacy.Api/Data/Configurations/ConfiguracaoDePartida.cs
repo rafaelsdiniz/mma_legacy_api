@@ -17,6 +17,18 @@ public sealed class ConfiguracaoDePartida : IEntityTypeConfiguration<Partida>
         construtor.Property(partida => partida.CriadaEm).IsRequired();
         construtor.Property(partida => partida.Status).IsRequired();
 
+        // Partidas criadas antes do modo difícil existir ficam no fácil, que era
+        // o comportamento delas.
+        //
+        // O sentinela é 0 — valor que o enum não define — para o EF distinguir
+        // "não informado" de "informado como Facil". Sem isso ele trataria o
+        // default do CLR como ausência de valor e aplicaria o default do banco
+        // mesmo quando o jogador escolheu o nível de propósito.
+        construtor.Property(partida => partida.NivelDeDificuldade)
+            .IsRequired()
+            .HasSentinel(0)
+            .HasDefaultValue(Domain.Enums.NivelDeDificuldade.Facil);
+
         // Derivados dos demais campos: recalcular é mais barato que manter
         // sincronizado, e uma coluna a menos é uma inconsistência a menos.
         construtor.Ignore(partida => partida.EscolhasFeitas);

@@ -55,7 +55,14 @@ public sealed record CriarPartidaRequisicao(
     [Required(ErrorMessage = "Escolha a base de luta.")]
     BaseDeLuta? BaseDeLuta,
 
-    int? Seed)
+    int? Seed,
+
+    /// <summary>
+    /// Omitido, vale <see cref="Domain.Enums.NivelDeDificuldade.Facil"/>. É o
+    /// padrão porque quem chega sem escolher está jogando pela primeira vez, e
+    /// o modo difícil sem contexto nenhum é frustrante, não desafiador.
+    /// </summary>
+    NivelDeDificuldade? NivelDeDificuldade)
 {
     /// <summary>Converte a requisição validada na ficha do domínio.</summary>
     public FichaDeInscricao ParaFicha() => new(
