@@ -36,10 +36,16 @@ public static class CalculadoraDeLegado
     /// <summary>Defesas de cinturão a partir das quais o reinado vira dominância.</summary>
     private const int DefesasParaReinadoDominante = 5;
 
-    private const int PontuacaoParaMaiorDeTodos = 320;
-    private const int PontuacaoParaLenda = 260;
-    private const int PontuacaoParaElite = 90;
-    private const int PontuacaoParaVeterano = 50;
+    // Os limiares foram calibrados contra a distribuição real do motor, medida
+    // em DiagnosticoDeBalanceamento sobre 300 carreiras de cada nível de build.
+    // Referência das pontuações medianas: build 70 fica em ~61, build 85 em
+    // ~194 e build 96 em ~458. Cada limiar é aproximadamente um percentil alto
+    // da faixa logo abaixo, para que subir de degrau custe uma carreira melhor,
+    // e não apenas uma carreira mais longa.
+    private const int PontuacaoParaMaiorDeTodos = 550;
+    private const int PontuacaoParaLenda = 380;
+    private const int PontuacaoParaElite = 110;
+    private const int PontuacaoParaVeterano = 70;
     private const int VitoriasParaLutadorRegional = 5;
 
     /// <summary>
