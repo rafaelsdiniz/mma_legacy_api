@@ -1,0 +1,16 @@
+# Mantém fora da imagem tudo que não é código-fonte. Além de deixar o build
+# menor e mais rápido, evita que algum segredo local vá parar dentro do
+# contêiner por descuido.
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/.idea/
+.git/
+.gitignore
+tests/
+*.md
+docker-compose.yml
+**/appsettings.Development.json
+**/*.user
+**/secrets.json

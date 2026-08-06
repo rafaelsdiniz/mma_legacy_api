@@ -60,10 +60,13 @@ var aplicacao = construtor.Build();
 // Precisa vir antes de tudo: é ele que transforma exceção em ProblemDetails.
 aplicacao.UseExceptionHandler();
 
+if (!aplicacao.Environment.IsEnvironment(AmbienteDeTeste))
+{
+    await PrepararBancoAsync(aplicacao);
+}
+
 if (aplicacao.Environment.IsDevelopment())
 {
-    await PrepararBancoDeDesenvolvimentoAsync(aplicacao);
-
     aplicacao.MapOpenApi();
     aplicacao.UseSwaggerUI(opcoes =>
     {
@@ -75,22 +78,36 @@ if (aplicacao.Environment.IsDevelopment())
 aplicacao.UseCors(PoliticaDeCors);
 aplicacao.MapControllers();
 
+// Endpoint de saúde e de aquecimento.
+//
+// Em plataforma que escala a zero — Cloud Run, Azure F1 — a aplicação dorme
+// quando ninguém joga, e acordar leva alguns segundos. O front chama isto assim
+// que o jogador abre a ficha de inscrição, então a API já está de pé quando ele
+// termina de digitar o nome e clica em "Iniciar draft".
+aplicacao.MapGet("/api/saude", () => Results.Ok(new { situacao = "no ar" }));
+
 await aplicacao.RunAsync();
 
 /// <summary>
 /// Aplica as migrations pendentes e garante o acervo de atletas.
 /// </summary>
 /// <remarks>
-/// Só roda em desenvolvimento. Migrar automaticamente é conveniente na máquina
-/// de quem desenvolve e perigoso em produção, onde a migration deve ser um
-/// passo explícito e revisável do deploy.
+/// Roda também em produção, e isso é uma escolha consciente com um custo real:
+/// o correto em sistema com dado de usuário é migrar em passo separado e
+/// revisável do deploy, porque uma migration ruim derruba a aplicação inteira
+/// no ar em vez de falhar num passo isolado do pipeline.
+/// <para>
+/// Aqui o risco é aceitável — não há dado de terceiros, o banco é pequeno e o
+/// projeto é de uma pessoa só. Se um dia houver conta de jogador, mova esta
+/// chamada para um passo do deploy antes de subir a nova revisão.
+/// </para>
 /// <para>
 /// O seed é idempotente — os Ids dos atletas vêm do slug —, então rodar a cada
 /// inicialização atualiza as notas em vez de duplicar o elenco. É assim que se
-/// rebalanceia o acervo: edita <c>AcervoDeLutadores</c> e reinicia a API.
+/// rebalanceia o acervo: edita <c>AcervoDeLutadores</c> e sobe de novo.
 /// </para>
 /// </remarks>
-static async Task PrepararBancoDeDesenvolvimentoAsync(WebApplication aplicacao)
+static async Task PrepararBancoAsync(WebApplication aplicacao)
 {
     using var escopo = aplicacao.Services.CreateScope();
     var contexto = escopo.ServiceProvider.GetRequiredService<ContextoDoJogo>();
