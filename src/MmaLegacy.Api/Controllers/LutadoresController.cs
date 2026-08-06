@@ -32,4 +32,35 @@ public sealed class LutadoresController(ContextoDoJogo contexto) : ControllerBas
 
         return Ok(acervo.Select(LutadorDoAcervoResposta.DeDominio).ToList());
     }
+
+    /// <summary>
+    /// Devolve o ranking das divisões, da mais leve para a mais pesada.
+    /// </summary>
+    /// <remarks>
+    /// É a mesma escada que a carreira percorre. Lendas ficam de fora: elas
+    /// entram no draft, mas não competem no presente.
+    /// </remarks>
+    [HttpGet("ranking")]
+    [ResponseCache(Duration = 3600)]
+    [ProducesResponseType<IReadOnlyList<DivisaoDoRankingResposta>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<DivisaoDoRankingResposta>>> Ranking(
+        CancellationToken cancelamento)
+    {
+        var ranqueados = await contexto.Lutadores
+            .AsNoTracking()
+            .Where(lutador => !lutador.EhLenda
+                && lutador.Categoria != null
+                && lutador.PosicaoNoRanking != null)
+            .OrderBy(lutador => lutador.Categoria)
+            .ThenBy(lutador => lutador.PosicaoNoRanking)
+            .ToListAsync(cancelamento);
+
+        var divisoes = ranqueados
+            .GroupBy(lutador => lutador.Categoria!.Value)
+            .OrderBy(grupo => grupo.Key)
+            .Select(grupo => DivisaoDoRankingResposta.DeDominio(grupo.Key, grupo))
+            .ToList();
+
+        return Ok(divisoes);
+    }
 }
