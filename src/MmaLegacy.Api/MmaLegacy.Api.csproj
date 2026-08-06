@@ -17,10 +17,24 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+
+    <!--
+      Microsoft.AspNetCore.OpenApi 10.0.9 traz Microsoft.OpenApi 2.0.0, que tem
+      vulnerabilidade conhecida de severidade alta (GHSA-v5pm-xwqc-g5wc). Esta
+      referência direta força a versão corrigida. Pode ser removida quando o
+      pacote da Microsoft passar a depender de uma 2.x mais nova.
+    -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!--
+      O provider do PostgreSQL traz EF Core 10.0.4 e as ferramentas de design
+      trazem 10.0.10. Fixar a versão aqui alinha as duas e evita o conflito de
+      assembly que aparecia ao compilar o projeto de testes.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.2.3" />
   </ItemGroup>
