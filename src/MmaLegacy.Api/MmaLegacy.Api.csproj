@@ -7,6 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      Os construtores de LutaDaCarreira e os métodos de encerramento de Carreira
+      são internal para que só o motor possa montar uma carreira. Os testes
+      precisam do mesmo acesso para montar cenários sem simular tudo.
+    -->
+    <InternalsVisibleTo Include="MmaLegacy.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
