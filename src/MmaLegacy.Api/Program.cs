@@ -9,6 +9,12 @@ var construtor = WebApplication.CreateBuilder(args);
 
 const string PoliticaDeCors = "front-end";
 
+/// <summary>
+/// Ambiente usado pelos testes de contrato HTTP, que sobem a API inteira com
+/// um banco próprio no lugar do PostgreSQL.
+/// </summary>
+const string AmbienteDeTeste = "Testing";
+
 construtor.Services.AddControllers().AddJsonOptions(opcoes =>
 {
     // Enums viajam como texto ("Nocaute", não 1). O front-end fica legível e
@@ -16,8 +22,16 @@ construtor.Services.AddControllers().AddJsonOptions(opcoes =>
     opcoes.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-construtor.Services.AddDbContext<ContextoDoJogo>(opcoes =>
-    opcoes.UseNpgsql(construtor.Configuration.GetConnectionString("DefaultConnection")));
+// O ambiente Testing não registra provider nenhum: a fábrica dos testes injeta
+// o seu (SQLite em memória). Sem esta condição os dois ficariam no mesmo
+// contêiner e o EF recusa a inicialização — "only a single database provider
+// can be registered". Remover os serviços do Npgsql depois não resolve, porque
+// AddDbContext registra bem mais do que as opções.
+if (!construtor.Environment.IsEnvironment(AmbienteDeTeste))
+{
+    construtor.Services.AddDbContext<ContextoDoJogo>(opcoes =>
+        opcoes.UseNpgsql(construtor.Configuration.GetConnectionString("DefaultConnection")));
+}
 
 // O motor não guarda estado entre chamadas: toda a aleatoriedade vive no
 // Sorteio, criado por partida. Por isso pode ser singleton.

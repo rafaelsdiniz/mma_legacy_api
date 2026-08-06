@@ -17,30 +17,42 @@ namespace MmaLegacy.Api.Contracts;
 /// Semente da partida. Deixe em branco para sortear. Informar a mesma semente
 /// reproduz exatamente o mesmo draft e a mesma carreira.
 /// </param>
+/// <remarks>
+/// Os atributos de validação ficam no <b>parâmetro</b> do construtor, sem o
+/// alvo <c>property:</c>. Em records posicionais o MVC lê a metadata do
+/// parâmetro e recusa a requisição inteira com <c>InvalidOperationException</c>
+/// se encontrar validação presa à propriedade gerada.
+/// </remarks>
 public sealed record CriarPartidaRequisicao(
-    [property: Required(ErrorMessage = "Informe o nome do lutador.")]
-    [property: StringLength(FichaDeInscricao.TamanhoMaximoDoNome, MinimumLength = 2)]
+    // As mensagens são escritas para o jogador ler no formulário, não para o
+    // desenvolvedor ler no log. Sem elas o ASP.NET devolve o texto padrão em
+    // inglês e o front-end teria que traduzir por conta própria.
+    [Required(ErrorMessage = "Informe o nome do lutador.")]
+    [StringLength(FichaDeInscricao.TamanhoMaximoDoNome, MinimumLength = 2,
+        ErrorMessage = "O nome deve ter entre {2} e {1} caracteres.")]
     string Nome,
 
-    [property: Required(ErrorMessage = "Informe o apelido do lutador.")]
-    [property: StringLength(FichaDeInscricao.TamanhoMaximoDoApelido, MinimumLength = 1)]
+    [Required(ErrorMessage = "Informe o apelido do lutador.")]
+    [StringLength(FichaDeInscricao.TamanhoMaximoDoApelido, MinimumLength = 1,
+        ErrorMessage = "O apelido deve ter no máximo {1} caracteres.")]
     string Apelido,
 
-    [property: Required(ErrorMessage = "Informe a nacionalidade.")]
-    [property: StringLength(60, MinimumLength = 2)]
+    [Required(ErrorMessage = "Informe a nacionalidade.")]
+    [StringLength(60, MinimumLength = 2,
+        ErrorMessage = "A nacionalidade deve ter entre {2} e {1} caracteres.")]
     string Nacionalidade,
 
     // Os enums são anuláveis de propósito: sem isso, uma requisição que
     // esquecesse o campo passaria pela validação com o valor 0 e o jogador
     // receberia uma categoria que não escolheu.
-    [property: Required(ErrorMessage = "Escolha a categoria de peso.")]
+    [Required(ErrorMessage = "Escolha a categoria de peso.")]
     CategoriaDePeso? CategoriaDePeso,
 
-    [property: Range(FichaDeInscricao.IdadeMinima, FichaDeInscricao.IdadeMaxima,
+    [Range(FichaDeInscricao.IdadeMinima, FichaDeInscricao.IdadeMaxima,
         ErrorMessage = "A idade de estreia deve estar entre {1} e {2} anos.")]
     int IdadeInicial,
 
-    [property: Required(ErrorMessage = "Escolha a base de luta.")]
+    [Required(ErrorMessage = "Escolha a base de luta.")]
     BaseDeLuta? BaseDeLuta,
 
     int? Seed)

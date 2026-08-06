@@ -15,8 +15,8 @@ namespace MmaLegacy.Api.Contracts;
 /// <param name="AtletaId">O atleta apresentado na rodada atual.</param>
 /// <param name="Habilidade">A habilidade que o jogador quer levar dele.</param>
 public sealed record EscolherHabilidadeRequisicao(
-    [property: Required(ErrorMessage = "Informe o atleta da rodada.")]
+    [Required(ErrorMessage = "Informe o atleta da rodada.")]
     Guid AtletaId,
 
-    [property: Required(ErrorMessage = "Escolha uma habilidade.")]
+    [Required(ErrorMessage = "Escolha uma habilidade.")]
     Habilidade? Habilidade);
