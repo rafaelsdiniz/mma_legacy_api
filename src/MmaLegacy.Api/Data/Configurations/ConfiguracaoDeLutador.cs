@@ -22,6 +22,16 @@ public sealed class ConfiguracaoDeLutador : IEntityTypeConfiguration<Lutador>
             .IsRequired()
             .HasDefaultValue(false);
 
+        // Atletas cadastrados antes do elenco do draft existir ficam de fora do
+        // sorteio até o seed rodar de novo e reclassificá-los.
+        construtor.Property(lutador => lutador.SorteavelNoDraft)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        // O draft sorteia só entre os habilitados; sem o índice a consulta varre
+        // o acervo inteiro a cada partida criada.
+        construtor.HasIndex(lutador => lutador.SorteavelNoDraft);
+
         construtor.Property(lutador => lutador.Categoria);
         construtor.Property(lutador => lutador.PosicaoNoRanking);
 
