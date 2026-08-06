@@ -1,4 +1,5 @@
 using MmaLegacy.Api.Domain.Enums;
+using MmaLegacy.Api.Domain.Exceptions;
 
 namespace MmaLegacy.Api.Domain;
 
@@ -52,5 +53,22 @@ public sealed class RodadaDeDraft
     {
         HabilidadeEscolhida = habilidade;
         NotaObtida = nota;
+    }
+
+    /// <summary>
+    /// Troca o atleta desta rodada, quando o jogador usa um pulo.
+    /// </summary>
+    /// <remarks>
+    /// Só faz sentido antes da escolha: depois de registrada, a nota já foi
+    /// gravada e trocar o atleta deixaria o lutador montado sem origem.
+    /// </remarks>
+    internal void Substituir(Lutador substituto)
+    {
+        RegraDeNegocioException.Se(
+            Concluida,
+            "Não é possível trocar o atleta de uma rodada já decidida.");
+
+        LutadorId = substituto.Id;
+        LutadorNome = substituto.Nome;
     }
 }

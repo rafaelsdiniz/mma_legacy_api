@@ -40,6 +40,13 @@ public sealed class Partida
     /// </remarks>
     public NivelDeDificuldade NivelDeDificuldade { get; private set; }
 
+    /// <summary>Quantas vezes o jogador já dispensou o atleta da rodada.</summary>
+    public int PulosUsados { get; private set; }
+
+    /// <summary>Pulos que ainda restam nesta partida.</summary>
+    public int PulosRestantes =>
+        RegrasDeDificuldade.PulosPermitidos(NivelDeDificuldade) - PulosUsados;
+
     public FichaDeInscricao Ficha { get; private set; } = null!;
 
     /// <summary>O lutador montado. Só existe depois da oitava escolha.</summary>
@@ -169,6 +176,39 @@ public sealed class Partida
             ConcluirDraft();
         }
     }
+
+    /// <summary>
+    /// Dispensa o atleta da rodada atual e coloca outro no lugar.
+    /// </summary>
+    /// <param name="substituto">
+    /// Atleta que assume a rodada. Quem escolhe é o serviço, que conhece o
+    /// acervo — o domínio só garante que ele não repete ninguém já sorteado.
+    /// </param>
+    public void PularAtleta(Lutador substituto)
+    {
+        ArgumentNullException.ThrowIfNull(substituto);
+
+        RegraDeNegocioException.Se(
+            Status != StatusDaPartida.DraftEmAndamento,
+            "O draft desta partida já foi concluído.");
+
+        RegraDeNegocioException.Se(
+            PulosRestantes <= 0,
+            NivelDeDificuldade == NivelDeDificuldade.Dificil
+                ? "Você já usou seu único pulo nesta partida."
+                : "Você já usou os dois pulos desta partida.");
+
+        RegraDeNegocioException.Se(
+            _rodadas.Any(rodada => rodada.LutadorId == substituto.Id),
+            $"{substituto.Nome} já apareceu neste draft.");
+
+        RodadaAtual().Substituir(substituto);
+        PulosUsados++;
+    }
+
+    /// <summary>Atletas já sorteados, para o serviço não repetir ninguém ao substituir.</summary>
+    public IReadOnlyCollection<Guid> AtletasJaSorteados() =>
+        _rodadas.Select(rodada => rodada.LutadorId).ToHashSet();
 
     /// <summary>
     /// Guarda a carreira simulada e encerra a partida.

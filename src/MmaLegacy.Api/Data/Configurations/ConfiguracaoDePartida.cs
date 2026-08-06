@@ -29,6 +29,10 @@ public sealed class ConfiguracaoDePartida : IEntityTypeConfiguration<Partida>
             .HasSentinel(0)
             .HasDefaultValue(Domain.Enums.NivelDeDificuldade.Facil);
 
+        construtor.Property(partida => partida.PulosUsados)
+            .IsRequired()
+            .HasDefaultValue(0);
+
         // Derivados dos demais campos: recalcular é mais barato que manter
         // sincronizado, e uma coluna a menos é uma inconsistência a menos.
         construtor.Ignore(partida => partida.EscolhasFeitas);

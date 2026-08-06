@@ -27,3 +27,25 @@ public enum NivelDeDificuldade
     /// </summary>
     Dificil = 2
 }
+
+/// <summary>Regras que dependem do nível escolhido.</summary>
+public static class RegrasDeDificuldade
+{
+    /// <summary>
+    /// Quantas vezes o jogador pode dispensar o atleta da rodada e receber
+    /// outro no lugar.
+    /// </summary>
+    /// <remarks>
+    /// O difícil tem menos pulos, e não mais, apesar de ser o modo em que falta
+    /// informação. O pulo aqui não é compensação: é a única válvula de escape
+    /// de quem não reconheceu o atleta — e justamente por isso precisa ser
+    /// escassa, senão vira uma forma de contornar o desconhecimento em vez de
+    /// conviver com ele.
+    /// </remarks>
+    public static int PulosPermitidos(NivelDeDificuldade nivel) => nivel switch
+    {
+        NivelDeDificuldade.Facil => 2,
+        NivelDeDificuldade.Dificil => 1,
+        _ => 0
+    };
+}
