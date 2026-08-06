@@ -52,8 +52,11 @@ public sealed class Partida
     /// <summary>O lutador montado. Só existe depois da oitava escolha.</summary>
     public LutadorCriado? Lutador { get; private set; }
 
-    /// <summary>A carreira simulada. Só existe depois que o jogador pede a simulação.</summary>
+    /// <summary>A carreira. Só existe depois que o jogador estreia o lutador.</summary>
     public Carreira? Carreira { get; private set; }
+
+    /// <summary>Há uma carreira em atividade, com ofertas de luta esperando decisão.</summary>
+    public bool CarreiraEstaEmAndamento => Status == StatusDaPartida.CarreiraEmAndamento;
 
     public IReadOnlyList<RodadaDeDraft> Rodadas => _rodadas.OrderBy(rodada => rodada.Ordem).ToList();
 
@@ -211,19 +214,32 @@ public sealed class Partida
         _rodadas.Select(rodada => rodada.LutadorId).ToHashSet();
 
     /// <summary>
-    /// Guarda a carreira simulada e encerra a partida.
+    /// Põe o lutador em atividade: a carreira passa a existir e a primeira
+    /// rodada de ofertas vai para a mesa.
     /// </summary>
-    public void RegistrarCarreira(Carreira carreira)
+    public void EstrearCarreira(Carreira carreira)
     {
         ArgumentNullException.ThrowIfNull(carreira);
 
         RegraDeNegocioException.Se(
             Status != StatusDaPartida.DraftConcluido,
             Status == StatusDaPartida.DraftEmAndamento
-                ? "Termine o draft antes de simular a carreira."
-                : "A carreira desta partida já foi simulada.");
+                ? "Termine o draft antes de estrear o lutador."
+                : "Este lutador já estreou.");
 
         Carreira = carreira;
+        Status = StatusDaPartida.CarreiraEmAndamento;
+    }
+
+    /// <summary>Fecha a partida quando o lutador pendura as luvas.</summary>
+    public void EncerrarCarreira()
+    {
+        RegraDeNegocioException.Se(
+            Status != StatusDaPartida.CarreiraEmAndamento,
+            Status == StatusDaPartida.CarreiraSimulada
+                ? "A carreira desta partida já foi encerrada."
+                : "Esta partida ainda não tem um lutador em atividade.");
+
         Status = StatusDaPartida.CarreiraSimulada;
     }
 
@@ -236,10 +252,25 @@ public sealed class Partida
             $"O lutador ainda não foi montado: faltam " +
             $"{Habilidades.Quantidade - EscolhasFeitas} escolha(s) no draft.");
 
-    /// <summary>Devolve a carreira simulada, garantindo que a simulação já rodou.</summary>
-    public Carreira ExigirCarreiraSimulada() =>
+    /// <summary>Devolve a carreira, garantindo que o lutador já estreou.</summary>
+    public Carreira ExigirCarreira() =>
         Carreira ?? throw new RegraDeNegocioException(
-            "A carreira desta partida ainda não foi simulada.");
+            "O lutador desta partida ainda não estreou.");
+
+    /// <summary>
+    /// Devolve a carreira já encerrada. É o que a tela de resultado exige: um
+    /// veredito de legado sobre uma carreira em andamento seria um palpite.
+    /// </summary>
+    public Carreira ExigirCarreiraEncerrada()
+    {
+        var carreira = ExigirCarreira();
+
+        RegraDeNegocioException.Se(
+            !carreira.Encerrada,
+            "A carreira desta partida ainda está em andamento.");
+
+        return carreira;
+    }
 
     private void ConcluirDraft()
     {
