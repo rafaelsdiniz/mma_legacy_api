@@ -62,6 +62,24 @@ public sealed class Lutador
     /// </remarks>
     public int? PosicaoNoRanking { get; private set; }
 
+    /// <summary>
+    /// O atleta pode ser sorteado nas oito rodadas do draft.
+    /// </summary>
+    /// <remarks>
+    /// Estar no acervo e ser sorteável são coisas diferentes, e essa separação é
+    /// o que mantém o draft interessante. O acervo precisa dos quinze ranqueados
+    /// de cada divisão para a carreira ter uma escada real para subir; o draft
+    /// precisa de nomes que o jogador <b>reconheça</b> — roubar o wrestling do
+    /// Khabib é uma decisão, roubar o wrestling do décimo quarto colocado do
+    /// peso-galo é um sorteio.
+    /// <para>
+    /// Quem manda nisto é <c>ElencoDoDraft</c>, uma lista escrita à mão. Tirar
+    /// alguém do draft não o tira do jogo: ele continua no ranking e continua
+    /// podendo aparecer como adversário da carreira.
+    /// </para>
+    /// </remarks>
+    public bool SorteavelNoDraft { get; private set; }
+
     /// <summary>Campeão da divisão.</summary>
     public bool EhCampeao => PosicaoNoRanking == 0;
 
@@ -114,14 +132,24 @@ public sealed class Lutador
     {
         ArgumentNullException.ThrowIfNull(ranqueado);
 
-        return new Lutador(
+        var fundido = new Lutador(
             Nome,
             Pais,
             Atributos,
             EhLenda,
             ranqueado.Categoria,
             ranqueado.PosicaoNoRanking);
+
+        fundido.SorteavelNoDraft = SorteavelNoDraft || ranqueado.SorteavelNoDraft;
+
+        return fundido;
     }
+
+    /// <summary>
+    /// Marca se o atleta entra no sorteio do draft. Chamado pelo seed depois de
+    /// montar o acervo, a partir da lista escrita à mão.
+    /// </summary>
+    internal void DefinirSorteioNoDraft(bool sorteavel) => SorteavelNoDraft = sorteavel;
 
     /// <summary>
     /// Converte "Alex Poatan" em "alex-poatan": sem acento, sem maiúscula e sem
