@@ -22,6 +22,13 @@ public sealed class ConfiguracaoDeLutador : IEntityTypeConfiguration<Lutador>
             .IsRequired()
             .HasDefaultValue(false);
 
+        construtor.Property(lutador => lutador.Categoria);
+        construtor.Property(lutador => lutador.PosicaoNoRanking);
+
+        // A consulta que monta a tabela do ranking ordena por divisão e
+        // colocação; sem o índice ela varre o acervo inteiro toda vez.
+        construtor.HasIndex(lutador => new { lutador.Categoria, lutador.PosicaoNoRanking });
+
         construtor.Property(lutador => lutador.Pais).HasMaxLength(60).IsRequired();
         construtor.Property(lutador => lutador.Slug).HasMaxLength(80).IsRequired();
 

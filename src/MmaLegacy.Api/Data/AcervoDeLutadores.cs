@@ -53,8 +53,45 @@ public static class AcervoDeLutadores
         await contexto.SaveChangesAsync(cancelamento);
     }
 
-    /// <summary>Constrói o acervo em memória, sem tocar no banco.</summary>
-    public static IReadOnlyList<Lutador> Montar() =>
+    /// <summary>
+    /// O acervo completo: os ranqueados das oito divisões mais os atletas
+    /// escritos à mão.
+    /// </summary>
+    /// <remarks>
+    /// Dezesseis nomes estão nas duas listas, e a fusão dá preferência às notas
+    /// escritas à mão — para Alex Pereira e Islam Makhachev elas são melhores
+    /// do que qualquer derivação por posição. O que a lista de ranking acrescenta
+    /// nesses casos é a <b>divisão e a posição</b>, que a lista manual não tem.
+    /// <para>
+    /// A deduplicação é por slug, e existe também porque um mesmo atleta pode
+    /// aparecer em duas divisões do ranking — Alex Pereira está no meio-pesado e
+    /// no peso-pesado. Como o Id vem do slug, sem isto o seed quebraria com
+    /// chave duplicada. Vale a primeira ocorrência, que é a divisão principal.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<Lutador> Montar()
+    {
+        var acervo = new Dictionary<Guid, Lutador>();
+
+        foreach (var ranqueado in RankingOficial.Montar())
+        {
+            acervo.TryAdd(ranqueado.Id, ranqueado);
+        }
+
+        foreach (var manual in MontarListaManual())
+        {
+            // Já está no ranking: mantém as notas manuais e herda divisão e
+            // posição da entrada ranqueada.
+            acervo[manual.Id] = acervo.TryGetValue(manual.Id, out var ranqueado)
+                ? manual.ComRankingDe(ranqueado)
+                : manual;
+        }
+
+        return [.. acervo.Values];
+    }
+
+    /// <summary>Atletas com notas escritas à mão, um por um.</summary>
+    private static IReadOnlyList<Lutador> MontarListaManual() =>
     [
         //       nome                     país           str pot vel wre jiu car res iq
         Lenda("Anderson Silva", "Brasil", 97, 92, 90, 74, 88, 84, 86, 96),

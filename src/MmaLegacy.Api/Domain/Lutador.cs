@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using MmaLegacy.Api.Domain.Enums;
 using MmaLegacy.Api.Domain.Exceptions;
 
 namespace MmaLegacy.Api.Domain;
@@ -46,14 +47,50 @@ public sealed class Lutador
     /// </remarks>
     public bool EhLenda { get; private set; }
 
+    /// <summary>Divisão em que o atleta compete. Nulo para lendas fora de atividade.</summary>
+    public CategoriaDePeso? Categoria { get; private set; }
+
+    /// <summary>
+    /// Posição no ranking da divisão: <c>0</c> para o campeão, <c>1</c> a
+    /// <c>15</c> para os ranqueados, nulo para quem está fora do ranking.
+    /// </summary>
+    /// <remarks>
+    /// É o que permite a carreira acontecer contra adversários reais e o
+    /// jogador subir por uma escada concreta em vez de degraus abstratos.
+    /// Zero para o campeão porque a ordem numérica passa a ser a ordem do
+    /// ranking — ordenar por este campo já devolve a tabela pronta.
+    /// </remarks>
+    public int? PosicaoNoRanking { get; private set; }
+
+    /// <summary>Campeão da divisão.</summary>
+    public bool EhCampeao => PosicaoNoRanking == 0;
+
+    /// <summary>Está no ranking e pode ser adversário da carreira.</summary>
+    public bool EstaRanqueado => !EhLenda && Categoria is not null && PosicaoNoRanking is not null;
+
     /// <summary>Construtor sem parâmetros exigido pelo Entity Framework.</summary>
     private Lutador()
     {
     }
 
-    public Lutador(string nome, string pais, Atributos atributos, bool ehLenda = false)
+    public Lutador(
+        string nome,
+        string pais,
+        Atributos atributos,
+        bool ehLenda = false,
+        CategoriaDePeso? categoria = null,
+        int? posicaoNoRanking = null)
     {
         ArgumentNullException.ThrowIfNull(atributos);
+
+        if (posicaoNoRanking is { } posicao)
+        {
+            DadoInvalidoException.ExigirIntervalo(posicao, 0, 15, nameof(posicaoNoRanking));
+        }
+
+        RegraDeNegocioException.Se(
+            posicaoNoRanking is not null && categoria is null,
+            $"{nome} tem posição no ranking mas nenhuma categoria — um ranking existe dentro de uma divisão.");
 
         Nome = DadoInvalidoException.ExigirTextoPreenchido(nome, nameof(nome));
         Pais = DadoInvalidoException.ExigirTextoPreenchido(pais, nameof(pais));
@@ -61,6 +98,29 @@ public sealed class Lutador
         Id = GerarIdDeterministico(Slug);
         Atributos = atributos;
         EhLenda = ehLenda;
+        Categoria = categoria;
+        PosicaoNoRanking = posicaoNoRanking;
+    }
+
+    /// <summary>
+    /// Cópia deste atleta com a divisão e a posição de outro.
+    /// </summary>
+    /// <remarks>
+    /// Serve à fusão do acervo: quando um atleta tem notas escritas à mão e
+    /// também aparece no ranking, ficam valendo as notas manuais — que são
+    /// melhores — e a colocação vinda da lista de ranking.
+    /// </remarks>
+    internal Lutador ComRankingDe(Lutador ranqueado)
+    {
+        ArgumentNullException.ThrowIfNull(ranqueado);
+
+        return new Lutador(
+            Nome,
+            Pais,
+            Atributos,
+            EhLenda,
+            ranqueado.Categoria,
+            ranqueado.PosicaoNoRanking);
     }
 
     /// <summary>
