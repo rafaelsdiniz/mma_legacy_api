@@ -21,7 +21,7 @@ public sealed record ResultadoResposta(
     public static ResultadoResposta DeDominio(Partida partida)
     {
         var lutador = partida.ExigirLutadorMontado();
-        var carreira = partida.ExigirCarreiraSimulada();
+        var carreira = partida.ExigirCarreiraEncerrada();
 
         return new ResultadoResposta(
             partida.Id,

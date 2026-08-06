@@ -64,7 +64,7 @@ public sealed record LutadorMontadoResposta(
         Categorias.NomeDeExibicao(ficha.CategoriaDePeso),
         lutador.Overall,
         lutador.Estilo,
-        lutador.Atributos.Listar().Select(NotaDeHabilidadeResposta.DeDominio).ToList(),
+        NotaDeHabilidadeResposta.DeAtributos(lutador.Atributos),
         Habilidades.NomeDeExibicao(lutador.MaiorQualidade),
         Habilidades.NomeDeExibicao(lutador.PrincipalFraqueza));
 }
@@ -80,4 +80,12 @@ public sealed record NotaDeHabilidadeResposta(Habilidade Habilidade, string Nome
 {
     public static NotaDeHabilidadeResposta DeDominio(KeyValuePair<Habilidade, int> par) =>
         new(par.Key, Habilidades.NomeDeExibicao(par.Key), par.Value);
+
+    /// <summary>As oito notas de um conjunto de atributos, na ordem do draft.</summary>
+    public static IReadOnlyList<NotaDeHabilidadeResposta> DeAtributos(Atributos atributos)
+    {
+        ArgumentNullException.ThrowIfNull(atributos);
+
+        return atributos.Listar().Select(DeDominio).ToList();
+    }
 }
