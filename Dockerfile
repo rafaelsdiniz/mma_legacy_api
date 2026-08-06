@@ -8,12 +8,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS compilacao
 WORKDIR /origem
 
-# Os .csproj vêm antes do resto do código de propósito: enquanto as dependências
+# O .csproj vem antes do resto do código de propósito: enquanto as dependências
 # não mudarem, o Docker reaproveita a camada de restore e o build fica em
 # segundos em vez de minutos.
-COPY MmaLegacy.slnx ./
+#
+# Só o projeto da API entra. A solution e o projeto de testes ficam de fora
+# porque o .dockerignore exclui `tests/` — imagem de produção não carrega teste.
 COPY src/MmaLegacy.Api/MmaLegacy.Api.csproj src/MmaLegacy.Api/
-COPY tests/MmaLegacy.Tests/MmaLegacy.Tests.csproj tests/MmaLegacy.Tests/
 RUN dotnet restore src/MmaLegacy.Api/MmaLegacy.Api.csproj
 
 COPY src/ src/
