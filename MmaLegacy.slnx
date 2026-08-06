@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MmaLegacy.Api/MmaLegacy.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MmaLegacy.Tests/MmaLegacy.Tests.csproj" />
+  </Folder>
+</Solution>
