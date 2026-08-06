@@ -64,7 +64,11 @@ dotnet run --project src/MmaLegacy.Api
 Em `Development` a API aplica as migrations e semeia o acervo de atletas
 sozinha na inicialização. Não é preciso rodar `dotnet ef` na mão.
 
-Swagger em `http://localhost:5000/swagger`.
+Swagger em `http://localhost:5080/swagger`.
+
+Para percorrer o fluxo inteiro sem abrir o navegador, use
+[`MmaLegacy.Api.http`](src/MmaLegacy.Api/MmaLegacy.Api.http) — ele encadeia
+criar partida, as oito rodadas do draft, a simulação e o resultado.
 
 ### Sem Docker
 

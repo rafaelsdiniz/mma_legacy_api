@@ -1,0 +1,167 @@
+@host = http://localhost:5080
+
+###############################################################################
+# Fluxo completo de uma partida.
+#
+# Execute as requisições de cima para baixo. O identificador da partida e o
+# atleta de cada rodada são lidos das respostas anteriores, então não é preciso
+# copiar Guid nenhum na mão.
+#
+# A seed fixa faz este roteiro sortear sempre os mesmos oito atletas e produzir
+# sempre a mesma carreira — é o que torna o resultado conferível.
+###############################################################################
+
+### Cria a partida e sorteia os oito atletas do draft
+# @name criarPartida
+POST {{host}}/api/partidas
+Content-Type: application/json
+
+{
+  "nome": "Rafael Diniz",
+  "apelido": "The Machine",
+  "nacionalidade": "Brasil",
+  "categoriaDePeso": "MeioPesado",
+  "idadeInicial": 22,
+  "baseDeLuta": "MuayThai",
+  "seed": 20260805
+}
+
+@partidaId = {{criarPartida.response.body.id}}
+
+### Rodada 1 — quem está na sua frente e o que ele tem
+# @name rodada1
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+### Rodada 1 — leva o striking dele
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada1.response.body.atleta.id}}",
+  "habilidade": "Striking"
+}
+
+### Rodada 2
+# @name rodada2
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+###
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada2.response.body.atleta.id}}",
+  "habilidade": "Potencia"
+}
+
+### Rodada 3
+# @name rodada3
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+###
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada3.response.body.atleta.id}}",
+  "habilidade": "Velocidade"
+}
+
+### Rodada 4
+# @name rodada4
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+###
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada4.response.body.atleta.id}}",
+  "habilidade": "Wrestling"
+}
+
+### Rodada 5
+# @name rodada5
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+###
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada5.response.body.atleta.id}}",
+  "habilidade": "JiuJitsu"
+}
+
+### Rodada 6
+# @name rodada6
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+###
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada6.response.body.atleta.id}}",
+  "habilidade": "Cardio"
+}
+
+### Rodada 7
+# @name rodada7
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+###
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada7.response.body.atleta.id}}",
+  "habilidade": "Resistencia"
+}
+
+### Rodada 8 — a última fecha o draft e monta o lutador
+# @name rodada8
+GET {{host}}/api/partidas/{{partidaId}}/draft/atual
+
+### Depois desta, a resposta já vem com "lutador" preenchido
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada8.response.body.atleta.id}}",
+  "habilidade": "InteligenciaDeLuta"
+}
+
+### Simula a carreira inteira
+POST {{host}}/api/partidas/{{partidaId}}/carreira/simular
+
+### O pacote final: ficha, lutador e carreira em uma leitura
+GET {{host}}/api/partidas/{{partidaId}}/resultado
+
+###############################################################################
+# Casos de erro — devem devolver ProblemDetails, não stack trace
+###############################################################################
+
+### 409: o draft desta partida já acabou
+POST {{host}}/api/partidas/{{partidaId}}/draft/escolher
+Content-Type: application/json
+
+{
+  "atletaId": "{{rodada8.response.body.atleta.id}}",
+  "habilidade": "Cardio"
+}
+
+### 404: partida que não existe
+GET {{host}}/api/partidas/00000000-0000-0000-0000-000000000000
+
+### 400: ficha sem categoria e com idade fora da faixa
+POST {{host}}/api/partidas
+Content-Type: application/json
+
+{
+  "nome": "A",
+  "apelido": "",
+  "nacionalidade": "Brasil",
+  "idadeInicial": 12,
+  "baseDeLuta": "Boxe"
+}
