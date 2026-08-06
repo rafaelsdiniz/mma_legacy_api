@@ -14,11 +14,14 @@ public sealed record RodadaAtualResposta(
     NivelDeDificuldade NivelDeDificuldade,
     AtletaDoDraftResposta Atleta,
     IReadOnlyList<Habilidade> HabilidadesDisponiveis,
-    IReadOnlyList<EscolhaFeitaResposta> EscolhasFeitas)
+    IReadOnlyList<EscolhaFeitaResposta> EscolhasFeitas,
+    int PulosRestantes,
+    int PulosPermitidos)
 {
     public static RodadaAtualResposta DeDominio(ServicoDeDraft.RodadaEmAberto rodadaEmAberto)
     {
-        var nivel = rodadaEmAberto.Partida.NivelDeDificuldade;
+        var partida = rodadaEmAberto.Partida;
+        var nivel = partida.NivelDeDificuldade;
         var mostrarNotas = nivel == NivelDeDificuldade.Facil;
 
         return new RodadaAtualResposta(
@@ -26,11 +29,13 @@ public sealed record RodadaAtualResposta(
             Habilidades.Quantidade,
             nivel,
             AtletaDoDraftResposta.DeDominio(rodadaEmAberto.Atleta, mostrarNotas),
-            rodadaEmAberto.Partida.HabilidadesDisponiveis(),
-            rodadaEmAberto.Partida.Rodadas
+            partida.HabilidadesDisponiveis(),
+            partida.Rodadas
                 .Where(rodada => rodada.Concluida)
                 .Select(rodada => EscolhaFeitaResposta.DeDominio(rodada, mostrarNotas))
-                .ToList());
+                .ToList(),
+            partida.PulosRestantes,
+            RegrasDeDificuldade.PulosPermitidos(nivel));
     }
 }
 
