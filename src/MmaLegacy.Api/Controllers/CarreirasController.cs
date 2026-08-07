@@ -139,6 +139,30 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
 
         return Ok(Responder(jogada));
     }
+
+    /// <summary>
+    /// Passa um compromisso do calendário tratando a lesão.
+    /// </summary>
+    /// <remarks>
+    /// É a única jogada possível enquanto o lutador está machucado: a mesa de
+    /// ofertas fica vazia até ele se recuperar.
+    /// </remarks>
+    /// <response code="200">Um compromisso de recuperação passou.</response>
+    /// <response code="404">Partida inexistente.</response>
+    /// <response code="409">A carreira já acabou, ou não há lesão para tratar.</response>
+    [HttpPost("recuperar")]
+    [ProducesResponseType<SituacaoDaCarreiraResposta>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SituacaoDaCarreiraResposta>> Recuperar(
+        Guid partidaId,
+        CancellationToken cancelamento)
+    {
+        var jogada = await servicoDeCarreira.RecuperarAsync(partidaId, cancelamento);
+
+        return Ok(Responder(jogada));
+    }
+
     /// <summary>
     /// Monta a resposta a partir da jogada.
     /// </summary>

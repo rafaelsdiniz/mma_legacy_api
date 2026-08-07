@@ -62,6 +62,18 @@ public sealed class ServicoDeCarreira(
     public Task<JogadaDaCarreira> RecusarAsync(Guid partidaId, CancellationToken cancelamento = default) =>
         JogarAsync(partidaId, motorDeCarreira.Recusar, cancelamento);
 
+    /// <summary>
+    /// O jogador passa um compromisso do calendário tratando a lesão.
+    /// </summary>
+    /// <remarks>
+    /// É a única jogada disponível enquanto o lutador está machucado: a mesa de
+    /// ofertas fica vazia até ele voltar.
+    /// </remarks>
+    public Task<JogadaDaCarreira> RecuperarAsync(
+        Guid partidaId,
+        CancellationToken cancelamento = default) =>
+        JogarAsync(partidaId, motorDeCarreira.Recuperar, cancelamento);
+
     /// <summary>O jogador pendura as luvas por vontade própria.</summary>
     public Task<JogadaDaCarreira> AposentarAsync(Guid partidaId, CancellationToken cancelamento = default) =>
         JogarAsync(partidaId, (partida, carreira, _) => motorDeCarreira.Aposentar(partida, carreira), cancelamento);

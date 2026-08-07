@@ -110,4 +110,33 @@ public sealed class OfertaDeLuta
     public EstiloDeLuta EstiloDoAdversario => IdentificadorDeEstilo.Identificar(AtributosDoAdversario);
 
     public bool ValendoCinturao => DisputaDeCinturao || DefesaDeCinturao;
+
+    /// <summary>
+    /// Quão dura esta luta é para um lutador com o overall informado.
+    /// </summary>
+    /// <remarks>
+    /// Derivado, como o overall e o estilo do adversário, e pelo mesmo motivo:
+    /// o grau é uma relação entre dois lutadores, e o jogador de daqui a três
+    /// anos não é o mesmo que recebeu a oferta.
+    /// </remarks>
+    public GrauDeDificuldade DificuldadeContra(decimal overallDoJogador) =>
+        CalculadoraDeDificuldade.Calcular(OverallDoAdversario, overallDoJogador, ValendoCinturao);
+
+    /// <summary>
+    /// A chance de sair machucado desta luta, de 0 a 1.
+    /// </summary>
+    /// <remarks>
+    /// Mora aqui, e não solto no motor, porque é lido em dois lugares — a tela
+    /// que mostra o risco antes da decisão e o sorteio que o cobra depois. Um
+    /// método só garante que os dois falem do mesmo número.
+    /// </remarks>
+    public double RiscoDeLesaoPara(EstadoDaCarreira estado)
+    {
+        ArgumentNullException.ThrowIfNull(estado);
+
+        return CalculadoraDeLesao.Risco(
+            DificuldadeContra(estado.OverallAtual),
+            estado.Idade,
+            estado.Atributos[Habilidade.Resistencia]);
+    }
 }

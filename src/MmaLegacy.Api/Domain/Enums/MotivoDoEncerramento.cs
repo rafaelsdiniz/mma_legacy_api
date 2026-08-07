@@ -29,5 +29,11 @@ public enum MotivoDoEncerramento
     LimiteDeLutas = 6,
 
     /// <summary>O jogador pendurou as luvas por vontade própria.</summary>
-    EscolhaDoLutador = 7
+    EscolhaDoLutador = 7,
+
+    /// <summary>
+    /// Uma lesão grave em um corpo que já tinha coleção delas. Não é o lutador
+    /// que decide parar: é o médico.
+    /// </summary>
+    LesaoIncapacitante = 8
 }
