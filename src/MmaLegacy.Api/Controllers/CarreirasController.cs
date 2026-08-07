@@ -74,7 +74,12 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
         [FromBody] AceitarOfertaRequisicao requisicao,
         CancellationToken cancelamento)
     {
-        var jogada = await servicoDeCarreira.AceitarAsync(partidaId, requisicao.Indice, cancelamento);
+        var jogada = await servicoDeCarreira.AceitarAsync(
+            partidaId,
+            requisicao.Indice,
+            requisicao.FocoDoCamp,
+            requisicao.Intensidade,
+            cancelamento);
 
         return Ok(Responder(jogada));
     }
