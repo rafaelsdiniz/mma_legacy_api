@@ -55,6 +55,15 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// </summary>
     private const int VantagemQueValeDobro = 3;
 
+    /// <summary>Com que frequência a rodada traz de volta alguém que já te venceu.</summary>
+    private const double ChanceDeRevanche = 0.40;
+
+    /// <summary>
+    /// Quantas lutas atrás o último encontro ainda conta como recente. Revanche
+    /// contra alguém de doze lutas atrás não é revanche, é coincidência.
+    /// </summary>
+    private const int JanelaDaRevanche = 6;
+
     /// <summary>Defesas de cinturão necessárias antes de tentar uma segunda categoria.</summary>
     private const int DefesasParaMudarDeCategoria = 3;
 
@@ -183,6 +192,14 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
 
         carreira.LimparOfertas();
         carreira.RegistrarLuta(luta);
+
+        // Só quem vem de fora do ranking vira rival. No UFC o adversário já tem
+        // identidade — ele é o número da divisão, e vencê-lo é tomar o lugar
+        // dele; não precisa que a carreira lembre dele por conta própria.
+        if (oferta.PosicaoDoAdversario is null)
+        {
+            carreira.RegistrarEncontro(oferta, desfecho.Resultado, desfecho.Metodo);
+        }
         estado.RegistrarResultado(desfecho.Resultado, desfecho.Metodo, pesoDaVitoria);
 
         AvancarNaEscada(estado, oferta, desfecho.Resultado, eventos);
@@ -744,8 +761,65 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
                 chamada: MontarChamada(carreira, disputaDeCinturao, defesaDeCinturao, desvios[posicao])));
         }
 
+        return TalvezOferecerRevanche(carreira, ofertas, sorteio);
+    }
+
+    /// <summary>
+    /// Troca a oferta mais dura da rodada por uma revanche, quando há conta a
+    /// acertar.
+    /// </summary>
+    /// <remarks>
+    /// Substitui em vez de acrescentar: a rodada continua tendo o mesmo número
+    /// de opções, e a revanche ocupa o lugar da luta perigosa porque é isso que
+    /// ela é. Aceitar continua custando alguma coisa.
+    /// <para>
+    /// O rival volta com os mesmos atributos com que venceu. É de propósito — o
+    /// reencontro é o único espelho honesto da carreira: mesmo adversário,
+    /// jogador diferente. Se ele evoluísse junto, a revanche mediria o
+    /// balanceamento do gerador, não o que o jogador construiu.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<OfertaDeLuta> TalvezOferecerRevanche(
+        Carreira carreira,
+        List<OfertaDeLuta> ofertas,
+        Sorteio sorteio)
+    {
+        if (ofertas.Count == 0 || !sorteio.Acontece(ChanceDeRevanche))
+        {
+            return ofertas;
+        }
+
+        if (carreira.RivalComContaAAcertar(JanelaDaRevanche) is not { } rival)
+        {
+            return ofertas;
+        }
+
+        var lugarDaLutaDura = ofertas.Count - 1;
+        var substituida = ofertas[lugarDaLutaDura];
+
+        ofertas[lugarDaLutaDura] = new OfertaDeLuta(
+            indice: substituida.Indice,
+            adversario: rival.Nome,
+            cartelDoAdversario: rival.Cartel,
+            atributosDoAdversario: rival.Atributos,
+            organizacao: substituida.Organizacao,
+            categoria: substituida.Categoria,
+            disputaDeCinturao: substituida.DisputaDeCinturao,
+            defesaDeCinturao: substituida.DefesaDeCinturao,
+            roundsProgramados: substituida.RoundsProgramados,
+            chamada: MontarChamadaDaRevanche(rival),
+            rival: rival);
+
         return ofertas;
     }
+
+    /// <summary>Como o cartaz venderia o reencontro.</summary>
+    private static string MontarChamadaDaRevanche(Rival rival) => rival.MetodoDoUltimoEncontro switch
+    {
+        MetodoDeEncerramento.Nocaute => "Revanche: ele te nocauteou",
+        MetodoDeEncerramento.Finalizacao => "Revanche: ele te finalizou",
+        _ => "Revanche: ele levou a decisão"
+    };
 
     private static bool EstaNaGrandeOrganizacao(EtapaDaCarreira etapa) =>
         etapa >= EtapaDaCarreira.GrandeOrganizacao;
@@ -817,11 +891,13 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
 
     /// <summary>
     /// Quanto esta vitória adianta na fila. Bater alguém acima do próprio nível
-    /// vale por duas lutas — é o que compensa o risco de aceitar a oferta dura
-    /// em vez da confortável.
+    /// — ou acertar a conta com quem já te venceu — vale por duas lutas, e é o
+    /// que compensa o risco de aceitar a oferta dura em vez da confortável.
     /// </summary>
     private static int PesoDaVitoria(EstadoDaCarreira estado, OfertaDeLuta oferta) =>
-        oferta.OverallDoAdversario >= estado.OverallAtual + VantagemQueValeDobro ? 2 : 1;
+        oferta.OverallDoAdversario >= estado.OverallAtual + VantagemQueValeDobro || oferta.EhRevanche
+            ? 2
+            : 1;
 
     /// <summary>
     /// Motivos para pendurar as luvas, do mais duro ao mais melancólico: a idade
