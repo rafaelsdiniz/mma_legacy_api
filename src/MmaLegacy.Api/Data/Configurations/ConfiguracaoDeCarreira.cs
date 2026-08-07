@@ -33,6 +33,7 @@ public sealed class ConfiguracaoDeCarreira : IEntityTypeConfiguration<Carreira>
         ConfigurarEstado(construtor);
         ConfigurarLutas(construtor);
         ConfigurarOfertas(construtor);
+        ConfigurarRivais(construtor);
     }
 
     /// <summary>
@@ -147,12 +148,42 @@ public sealed class ConfiguracaoDeCarreira : IEntityTypeConfiguration<Carreira>
             oferta.Ignore(dado => dado.OverallDoAdversario);
             oferta.Ignore(dado => dado.EstiloDoAdversario);
             oferta.Ignore(dado => dado.ValendoCinturao);
+            oferta.Ignore(dado => dado.EhRevanche);
 
             oferta.OwnsOne(dado => dado.AtributosDoAdversario, ConfiguracaoDeAtributos.Aplicar);
             oferta.Navigation(dado => dado.AtributosDoAdversario).IsRequired();
         });
 
         construtor.Navigation(carreira => carreira.Ofertas)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+    }
+
+    /// <summary>
+    /// Os adversários de fora do ranking que a carreira guarda para uma
+    /// revanche. Tabela própria porque são vários e sobrevivem a várias
+    /// rodadas de oferta — ao contrário das ofertas, que a rodada seguinte
+    /// apaga.
+    /// </summary>
+    private static void ConfigurarRivais(EntityTypeBuilder<Carreira> construtor)
+    {
+        construtor.OwnsMany(carreira => carreira.Rivais, rival =>
+        {
+            rival.ToTable("RivaisDaCarreira");
+            rival.WithOwner().HasForeignKey("CarreiraId");
+            rival.HasKey(dado => dado.Id);
+            rival.Property(dado => dado.Id).ValueGeneratedNever();
+
+            rival.Property(dado => dado.Nome).HasMaxLength(80).IsRequired();
+            rival.Property(dado => dado.Cartel).HasMaxLength(20).IsRequired();
+
+            rival.Ignore(dado => dado.TemContaAAcertar);
+            rival.Ignore(dado => dado.TotalDeEncontros);
+
+            rival.OwnsOne(dado => dado.Atributos, ConfiguracaoDeAtributos.Aplicar);
+            rival.Navigation(dado => dado.Atributos).IsRequired();
+        });
+
+        construtor.Navigation(carreira => carreira.Rivais)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
