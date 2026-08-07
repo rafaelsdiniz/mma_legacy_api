@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MmaLegacy.Api.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MmaLegacy.Api.Data.Migrations
 {
     [DbContext(typeof(ContextoDoJogo))]
-    partial class ContextoDoJogoModelSnapshot : ModelSnapshot
+    [Migration("20260807123452_DificuldadeELesao")]
+    partial class DificuldadeELesao
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -459,9 +462,6 @@ namespace MmaLegacy.Api.Data.Migrations
                             b1.Property<bool>("DefesaDeCinturao")
                                 .HasColumnType("boolean");
 
-                            b1.Property<int>("DerrotasDoAdversarioParaVoce")
-                                .HasColumnType("integer");
-
                             b1.Property<bool>("DisputaDeCinturao")
                                 .HasColumnType("boolean");
 
@@ -475,18 +475,12 @@ namespace MmaLegacy.Api.Data.Migrations
                             b1.Property<int?>("PosicaoDoAdversario")
                                 .HasColumnType("integer");
 
-                            b1.Property<Guid?>("RivalId")
-                                .HasColumnType("uuid");
-
                             b1.Property<int>("RoundsProgramados")
                                 .HasColumnType("integer");
 
                             b1.Property<string>("SlugDoAdversario")
                                 .HasMaxLength(80)
                                 .HasColumnType("character varying(80)");
-
-                            b1.Property<int>("VitoriasDoAdversarioSobreVoce")
-                                .HasColumnType("integer");
 
                             b1.HasKey("Id");
 
@@ -546,110 +540,12 @@ namespace MmaLegacy.Api.Data.Migrations
                                 .IsRequired();
                         });
 
-                    b.OwnsMany("MmaLegacy.Api.Domain.Rival", "Rivais", b1 =>
-                        {
-                            b1.Property<Guid>("Id")
-                                .HasColumnType("uuid");
-
-                            b1.Property<Guid>("CarreiraId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<string>("Cartel")
-                                .IsRequired()
-                                .HasMaxLength(20)
-                                .HasColumnType("character varying(20)");
-
-                            b1.Property<int>("DerrotasParaOJogador")
-                                .HasColumnType("integer");
-
-                            b1.Property<int>("EmpatesComOJogador")
-                                .HasColumnType("integer");
-
-                            b1.Property<string>("MetodoDoUltimoEncontro")
-                                .IsRequired()
-                                .HasColumnType("text");
-
-                            b1.Property<string>("Nome")
-                                .IsRequired()
-                                .HasMaxLength(80)
-                                .HasColumnType("character varying(80)");
-
-                            b1.Property<int>("OrdemDoUltimoEncontro")
-                                .HasColumnType("integer");
-
-                            b1.Property<string>("ResultadoDoUltimoEncontro")
-                                .IsRequired()
-                                .HasColumnType("text");
-
-                            b1.Property<int>("VitoriasSobreOJogador")
-                                .HasColumnType("integer");
-
-                            b1.HasKey("Id");
-
-                            b1.HasIndex("CarreiraId");
-
-                            b1.ToTable("RivaisDaCarreira", (string)null);
-
-                            b1.WithOwner()
-                                .HasForeignKey("CarreiraId");
-
-                            b1.OwnsOne("MmaLegacy.Api.Domain.Atributos", "Atributos", b2 =>
-                                {
-                                    b2.Property<Guid>("RivalId")
-                                        .HasColumnType("uuid");
-
-                                    b2.Property<int>("Cardio")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("Cardio");
-
-                                    b2.Property<int>("InteligenciaDeLuta")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("InteligenciaDeLuta");
-
-                                    b2.Property<int>("JiuJitsu")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("JiuJitsu");
-
-                                    b2.Property<int>("Potencia")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("Potencia");
-
-                                    b2.Property<int>("Resistencia")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("Resistencia");
-
-                                    b2.Property<int>("Striking")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("Striking");
-
-                                    b2.Property<int>("Velocidade")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("Velocidade");
-
-                                    b2.Property<int>("Wrestling")
-                                        .HasColumnType("integer")
-                                        .HasColumnName("Wrestling");
-
-                                    b2.HasKey("RivalId");
-
-                                    b2.ToTable("RivaisDaCarreira");
-
-                                    b2.WithOwner()
-                                        .HasForeignKey("RivalId");
-                                });
-
-                            b1.Navigation("Atributos")
-                                .IsRequired();
-                        });
-
                     b.Navigation("Estado")
                         .IsRequired();
 
                     b.Navigation("Lutas");
 
                     b.Navigation("Ofertas");
-
-                    b.Navigation("Rivais");
                 });
 
             modelBuilder.Entity("MmaLegacy.Api.Domain.Lutador", b =>

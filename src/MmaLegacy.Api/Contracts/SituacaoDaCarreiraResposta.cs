@@ -25,6 +25,7 @@ public sealed record SituacaoDaCarreiraResposta(
     CarreiraResposta Carreira,
     DesfechoDaUltimaLutaResposta? UltimaLuta,
     IReadOnlyList<EventoDaCarreira> Eventos,
+    CampResposta? Camp,
     IReadOnlyList<LinhaDoRankingResposta> RankingDaDivisao,
     int? PosicaoAnterior)
 {
@@ -53,10 +54,13 @@ public sealed record SituacaoDaCarreiraResposta(
             carreira.Encerrada,
             carreira.MotivoDoEncerramento,
             EstadoDaCarreiraResposta.DeDominio(carreira),
-            carreira.Ofertas.Select(OfertaDeLutaResposta.DeDominio).ToList(),
+            carreira.Ofertas
+                .Select(oferta => OfertaDeLutaResposta.DeDominio(oferta, carreira.Estado))
+                .ToList(),
             CarreiraResposta.DeDominio(carreira),
             DesfechoDaUltimaLutaResposta.DeDominio(passo),
             passo?.Eventos ?? [],
+            CampResposta.DeDominio(passo?.Camp),
             MontarRanking(tabela, nome, carreira.Estado.PosicaoNoRanking),
             posicaoAnterior);
     }
@@ -116,6 +120,8 @@ public sealed record EstadoDaCarreiraResposta(
     int CompromissosNaTemporada,
     int CompromissosPorTemporada,
     int VezesDispensado,
+    int LesoesSofridas,
+    LesaoResposta? Lesao,
     int? PosicaoNoRanking)
 {
     public static EstadoDaCarreiraResposta DeDominio(Carreira carreira)
@@ -143,11 +149,91 @@ public sealed record EstadoDaCarreiraResposta(
             estado.CompromissosNaTemporada,
             RegrasDaCarreira.CompromissosPorTemporada(estado.Etapa),
             estado.VezesDispensado,
+            estado.LesoesSofridas,
+            LesaoResposta.DeDominio(estado.LesaoAtual),
             estado.PosicaoNoRanking);
     }
 }
 
+/// <summary>
+/// A lesão que está tirando o lutador de ação.
+/// </summary>
+/// <remarks>
+/// Vem com a sequela já explicitada, porque o jogador precisa entender o que
+/// perdeu. "Joelho lesionado" é uma frase; "joelho lesionado, dois pontos de
+/// velocidade a menos, para sempre" é a regra do jogo — e é ela que faz o
+/// jogador pensar duas vezes na próxima oferta brutal.
+/// </remarks>
+public sealed record LesaoResposta(
+    TipoDeLesao Tipo,
+    GravidadeDaLesao Gravidade,
+    Habilidade? HabilidadeAfetada,
+    int PontosPerdidos,
+    int Afastamento,
+    int CompromissosRestantes,
+    int IdadeQuandoOcorreu)
+{
+    public static LesaoResposta? DeDominio(Lesao? lesao)
+    {
+        if (lesao is null)
+        {
+            return null;
+        }
+
+        var pontosPerdidos = Lesao.SequelaDe(lesao.Gravidade);
+
+        return new LesaoResposta(
+            lesao.Tipo,
+            lesao.Gravidade,
+            // Corte não deixa sequela, e apontar uma habilidade afetada com
+            // zero ponto perdido faria a tela mentir.
+            pontosPerdidos > 0 ? Lesao.HabilidadeAfetadaPor(lesao.Tipo) : null,
+            pontosPerdidos,
+            lesao.Afastamento,
+            lesao.CompromissosRestantes,
+            lesao.IdadeQuandoOcorreu);
+    }
+}
+
+/// <summary>Uma intensidade de camp e o risco de lesão que ela traz para esta luta.</summary>
+/// <remarks>
+/// Vai uma linha por intensidade porque a escolha é feita na tela: o jogador
+/// precisa ver que treinar pesado custa alguns pontos percentuais de risco antes
+/// de decidir se vale.
+/// </remarks>
+public sealed record OpcaoDeCampResposta(IntensidadeDoTreino Intensidade, double RiscoDeLesao);
+
+/// <summary>O que o camp que antecedeu a luta produziu.</summary>
+/// <remarks>
+/// Diferencia "treinou e não rendeu" de "treinou e já estava no teto". São
+/// resultados iguais na nota e opostos na decisão: o primeiro pede insistência,
+/// o segundo pede outro foco.
+/// </remarks>
+public sealed record CampResposta(
+    Habilidade? Foco,
+    IntensidadeDoTreino Intensidade,
+    bool Evoluiu,
+    bool NoTetoDoPotencial,
+    int NotaAntes,
+    int NotaDepois)
+{
+    public static CampResposta? DeDominio(ResultadoDoCamp? camp) => camp is null
+        ? null
+        : new CampResposta(
+            camp.Foco,
+            camp.Intensidade,
+            camp.Evoluiu,
+            camp.NoTetoDoPotencial,
+            camp.NotaAntes,
+            camp.NotaDepois);
+}
+
 /// <summary>Uma luta na mesa, esperando a decisão do jogador.</summary>
+/// <remarks>
+/// Quando é revanche, o histórico do confronto direto vai junto: o jogador
+/// precisa saber que este é o cara que o nocauteou dois anos atrás, e não só
+/// mais um nome com overall parecido.
+/// </remarks>
 public sealed record OfertaDeLutaResposta(
     int Indice,
     string Adversario,
@@ -163,10 +249,16 @@ public sealed record OfertaDeLutaResposta(
     bool DefesaDeCinturao,
     int RoundsProgramados,
     string Chamada,
+    GrauDeDificuldade Dificuldade,
+    bool EhRevanche,
+    int VitoriasDoAdversarioSobreVoce,
+    int DerrotasDoAdversarioParaVoce,
+    double RiscoDeLesao,
+    IReadOnlyList<OpcaoDeCampResposta> OpcoesDeCamp,
     string? SlugDoAdversario,
     int? PosicaoDoAdversario)
 {
-    public static OfertaDeLutaResposta DeDominio(OfertaDeLuta oferta) => new(
+    public static OfertaDeLutaResposta DeDominio(OfertaDeLuta oferta, EstadoDaCarreira estado) => new(
         oferta.Indice,
         oferta.Adversario,
         oferta.CartelDoAdversario,
@@ -181,6 +273,14 @@ public sealed record OfertaDeLutaResposta(
         oferta.DefesaDeCinturao,
         oferta.RoundsProgramados,
         oferta.Chamada,
+        oferta.DificuldadeContra(estado.OverallAtual),
+        oferta.EhRevanche,
+        oferta.VitoriasDoAdversarioSobreVoce,
+        oferta.DerrotasDoAdversarioParaVoce,
+        oferta.RiscoDeLesaoPara(estado),
+        oferta.RiscoDeLesaoPorIntensidade(estado)
+            .Select(par => new OpcaoDeCampResposta(par.Key, par.Value))
+            .ToList(),
         oferta.SlugDoAdversario,
         oferta.PosicaoDoAdversario);
 }
@@ -233,5 +333,19 @@ public sealed record RoundResposta(
         round.Encerramento);
 }
 
-/// <summary>Corpo do pedido de aceitar uma oferta.</summary>
-public sealed record AceitarOfertaRequisicao(int Indice);
+/// <summary>
+/// Corpo do pedido de aceitar uma oferta.
+/// </summary>
+/// <remarks>
+/// Duas decisões viajam juntas porque são tomadas juntas: contra quem se vai
+/// lutar e com que corpo se vai chegar lá. Os dois campos do camp são opcionais
+/// — quem não escolher nada faz um camp padrão sem foco, que é exatamente como
+/// a carreira funcionava antes de o treino existir.
+/// </remarks>
+/// <param name="Indice">A oferta escolhida na rodada, começando em 1.</param>
+/// <param name="FocoDoCamp">Em que o lutador vai treinar, ou nulo para nenhum foco.</param>
+/// <param name="Intensidade">Com que peso ele vai treinar. Nulo vale por padrão.</param>
+public sealed record AceitarOfertaRequisicao(
+    int Indice,
+    Habilidade? FocoDoCamp = null,
+    IntensidadeDoTreino? Intensidade = null);

@@ -33,6 +33,7 @@ public sealed class ConfiguracaoDeCarreira : IEntityTypeConfiguration<Carreira>
         ConfigurarEstado(construtor);
         ConfigurarLutas(construtor);
         ConfigurarOfertas(construtor);
+        ConfigurarRivais(construtor);
     }
 
     /// <summary>
@@ -60,18 +61,43 @@ public sealed class ConfiguracaoDeCarreira : IEntityTypeConfiguration<Carreira>
                 .HasColumnName("AjusteDeOverallDoAdversario");
             estado.Property(dado => dado.CompromissosNaTemporada).HasColumnName("CompromissosNaTemporada");
             estado.Property(dado => dado.VezesDispensado).HasColumnName("VezesDispensado");
+            estado.Property(dado => dado.LesoesSofridas).HasColumnName("LesoesSofridas");
             estado.Property(dado => dado.Passo).HasColumnName("Passo");
             estado.Property(dado => dado.PosicaoNoRanking).HasColumnName("PosicaoNoRanking");
 
             estado.Ignore(dado => dado.OverallAtual);
             estado.Ignore(dado => dado.Estilo);
             estado.Ignore(dado => dado.EstaRanqueado);
+            estado.Ignore(dado => dado.EstaLesionado);
+
+            ConfigurarLesao(estado);
 
             estado.OwnsOne(dado => dado.Atributos, ConfiguracaoDeAtributos.Aplicar);
             estado.Navigation(dado => dado.Atributos).IsRequired();
         });
 
         construtor.Navigation(carreira => carreira.Estado).IsRequired();
+    }
+
+    /// <summary>
+    /// A lesão em tratamento vira colunas anuláveis da própria carreira. É uma
+    /// só por vez e nunca é consultada sozinha — uma tabela própria seria uma
+    /// junção a mais para guardar cinco números que só existem enquanto o
+    /// lutador está machucado.
+    /// </summary>
+    private static void ConfigurarLesao(OwnedNavigationBuilder<Carreira, EstadoDaCarreira> estado)
+    {
+        estado.OwnsOne(dado => dado.LesaoAtual, lesao =>
+        {
+            lesao.Property(dado => dado.Tipo).HasColumnName("TipoDaLesao");
+            lesao.Property(dado => dado.Gravidade).HasColumnName("GravidadeDaLesao");
+            lesao.Property(dado => dado.Afastamento).HasColumnName("AfastamentoDaLesao");
+            lesao.Property(dado => dado.CompromissosRestantes)
+                .HasColumnName("CompromissosDeRecuperacao");
+            lesao.Property(dado => dado.IdadeQuandoOcorreu).HasColumnName("IdadeQuandoSeLesionou");
+
+            lesao.Ignore(dado => dado.Sarou);
+        });
     }
 
     private static void ConfigurarLutas(EntityTypeBuilder<Carreira> construtor)
@@ -122,12 +148,42 @@ public sealed class ConfiguracaoDeCarreira : IEntityTypeConfiguration<Carreira>
             oferta.Ignore(dado => dado.OverallDoAdversario);
             oferta.Ignore(dado => dado.EstiloDoAdversario);
             oferta.Ignore(dado => dado.ValendoCinturao);
+            oferta.Ignore(dado => dado.EhRevanche);
 
             oferta.OwnsOne(dado => dado.AtributosDoAdversario, ConfiguracaoDeAtributos.Aplicar);
             oferta.Navigation(dado => dado.AtributosDoAdversario).IsRequired();
         });
 
         construtor.Navigation(carreira => carreira.Ofertas)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+    }
+
+    /// <summary>
+    /// Os adversários de fora do ranking que a carreira guarda para uma
+    /// revanche. Tabela própria porque são vários e sobrevivem a várias
+    /// rodadas de oferta — ao contrário das ofertas, que a rodada seguinte
+    /// apaga.
+    /// </summary>
+    private static void ConfigurarRivais(EntityTypeBuilder<Carreira> construtor)
+    {
+        construtor.OwnsMany(carreira => carreira.Rivais, rival =>
+        {
+            rival.ToTable("RivaisDaCarreira");
+            rival.WithOwner().HasForeignKey("CarreiraId");
+            rival.HasKey(dado => dado.Id);
+            rival.Property(dado => dado.Id).ValueGeneratedNever();
+
+            rival.Property(dado => dado.Nome).HasMaxLength(80).IsRequired();
+            rival.Property(dado => dado.Cartel).HasMaxLength(20).IsRequired();
+
+            rival.Ignore(dado => dado.TemContaAAcertar);
+            rival.Ignore(dado => dado.TotalDeEncontros);
+
+            rival.OwnsOne(dado => dado.Atributos, ConfiguracaoDeAtributos.Aplicar);
+            rival.Navigation(dado => dado.Atributos).IsRequired();
+        });
+
+        construtor.Navigation(carreira => carreira.Rivais)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

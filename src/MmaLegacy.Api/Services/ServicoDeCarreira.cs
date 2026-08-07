@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MmaLegacy.Api.Data;
 using MmaLegacy.Api.Domain;
+using MmaLegacy.Api.Domain.Enums;
 using MmaLegacy.Api.Simulation;
 
 namespace MmaLegacy.Api.Services;
@@ -48,19 +49,41 @@ public sealed class ServicoDeCarreira(
 
     /// <summary>O jogador aceita uma das ofertas na mesa e a luta acontece.</summary>
     /// <param name="indiceDaOferta">Índice da oferta escolhida, começando em 1.</param>
+    /// <param name="focoDoCamp">Em que ele treinou antes da luta, ou nulo para nenhum foco.</param>
+    /// <param name="intensidade">Com que peso treinou. Nulo vale como camp padrão.</param>
     public Task<JogadaDaCarreira> AceitarAsync(
         Guid partidaId,
         int indiceDaOferta,
+        Habilidade? focoDoCamp = null,
+        IntensidadeDoTreino? intensidade = null,
         CancellationToken cancelamento = default) =>
         JogarAsync(
             partidaId,
             (partida, carreira, ranking) =>
-                motorDeCarreira.Aceitar(partida, carreira, ranking, indiceDaOferta),
+                motorDeCarreira.Aceitar(
+                    partida,
+                    carreira,
+                    ranking,
+                    indiceDaOferta,
+                    focoDoCamp,
+                    intensidade ?? IntensidadeDoTreino.Padrao),
             cancelamento);
 
     /// <summary>O jogador recusa a rodada inteira e fica parado.</summary>
     public Task<JogadaDaCarreira> RecusarAsync(Guid partidaId, CancellationToken cancelamento = default) =>
         JogarAsync(partidaId, motorDeCarreira.Recusar, cancelamento);
+
+    /// <summary>
+    /// O jogador passa um compromisso do calendário tratando a lesão.
+    /// </summary>
+    /// <remarks>
+    /// É a única jogada disponível enquanto o lutador está machucado: a mesa de
+    /// ofertas fica vazia até ele voltar.
+    /// </remarks>
+    public Task<JogadaDaCarreira> RecuperarAsync(
+        Guid partidaId,
+        CancellationToken cancelamento = default) =>
+        JogarAsync(partidaId, motorDeCarreira.Recuperar, cancelamento);
 
     /// <summary>O jogador pendura as luvas por vontade própria.</summary>
     public Task<JogadaDaCarreira> AposentarAsync(Guid partidaId, CancellationToken cancelamento = default) =>

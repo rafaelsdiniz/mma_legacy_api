@@ -55,6 +55,15 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// </summary>
     private const int VantagemQueValeDobro = 3;
 
+    /// <summary>Com que frequência a rodada traz de volta alguém que já te venceu.</summary>
+    private const double ChanceDeRevanche = 0.40;
+
+    /// <summary>
+    /// Quantas lutas atrás o último encontro ainda conta como recente. Revanche
+    /// contra alguém de doze lutas atrás não é revanche, é coincidência.
+    /// </summary>
+    private const int JanelaDaRevanche = 6;
+
     /// <summary>Defesas de cinturão necessárias antes de tentar uma segunda categoria.</summary>
     private const int DefesasParaMudarDeCategoria = 3;
 
@@ -73,6 +82,9 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     private const int IdadeDeVeterano = 36;
     private const int IdadeDeCorpoCastigado = 34;
     private const int NocautesQueEncerramCarreira = 3;
+
+    /// <summary>Lesões acumuladas a partir das quais uma grave encerra a carreira.</summary>
+    private const int LesoesQueEncerramCarreira = 3;
     private const int IdadeParaDesistirSemResultado = 30;
     private const int LutasMinimasAntesDeDesistir = 10;
     private const int VitoriasMinimasParaSeguir = 5;
@@ -82,6 +94,8 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     private const int FinalidadeDaLuta = 1;
     private const int FinalidadeDaEvolucao = 2;
     private const int FinalidadeDasOfertas = 3;
+    private const int FinalidadeDaLesao = 4;
+    private const int FinalidadeDoCamp = 5;
 
     /// <summary>
     /// Estreia o lutador: cria a carreira e põe a primeira luta na mesa.
@@ -108,11 +122,17 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// ela.
     /// </summary>
     /// <param name="indiceDaOferta">Índice da oferta escolhida, começando em 1.</param>
+    /// <param name="focoDoCamp">
+    /// Em que o lutador vai treinar antes da luta, ou nulo para um camp sem foco.
+    /// </param>
+    /// <param name="intensidade">Com que peso ele vai treinar, e a que risco.</param>
     public PassoDaCarreira Aceitar(
         Partida partida,
         Carreira carreira,
         RankingDoJogo ranking,
-        int indiceDaOferta)
+        int indiceDaOferta,
+        Habilidade? focoDoCamp = null,
+        IntensidadeDoTreino intensidade = IntensidadeDoTreino.Padrao)
     {
         ArgumentNullException.ThrowIfNull(partida);
         ArgumentNullException.ThrowIfNull(carreira);
@@ -120,8 +140,31 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
 
         var estado = carreira.Estado;
         var oferta = carreira.ExigirOferta(indiceDaOferta);
+
+        // O grau e o risco são medidos antes de a luta acontecer, com o corpo
+        // que entrou no octógono. Depois dela os atributos já podem ter mudado,
+        // e o número que o jogador leu na oferta deixaria de ser o que foi
+        // cobrado dele.
+        var grau = oferta.DificuldadeContra(estado.OverallAtual);
+        var riscoDeLesao = oferta.RiscoDeLesaoPara(estado, intensidade);
         var passo = estado.AvancarPasso();
         var eventos = new List<EventoDaCarreira>();
+
+        // O camp acontece antes da luta, e por isso o lutador entra no octógono
+        // com o ponto que acabou de ganhar. O risco de lesão, não: aquele
+        // continua sendo o que a oferta anunciou, medido no corpo que aceitou.
+        var camp = CampoDeTreino.Rodar(
+            estado.Atributos,
+            partida.ExigirLutadorMontado().Atributos,
+            focoDoCamp,
+            intensidade,
+            estado.Idade,
+            Sortear(partida, passo, FinalidadeDoCamp));
+
+        if (camp.AtributosDepois is { } atributosDepoisDoCamp)
+        {
+            estado.AplicarCamp(atributosDepoisDoCamp);
+        }
 
         var adversario = PerfilDeCombate.Montar(oferta.Adversario, oferta.AtributosDoAdversario);
         var desfecho = motorDeLuta.Simular(
@@ -149,12 +192,21 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
 
         carreira.LimparOfertas();
         carreira.RegistrarLuta(luta);
+
+        // Só quem vem de fora do ranking vira rival. No UFC o adversário já tem
+        // identidade — ele é o número da divisão, e vencê-lo é tomar o lugar
+        // dele; não precisa que a carreira lembre dele por conta própria.
+        if (oferta.PosicaoDoAdversario is null)
+        {
+            carreira.RegistrarEncontro(oferta, desfecho.Resultado, desfecho.Metodo);
+        }
         estado.RegistrarResultado(desfecho.Resultado, desfecho.Metodo, pesoDaVitoria);
 
         AvancarNaEscada(estado, oferta, desfecho.Resultado, eventos);
+        AvaliarLesao(partida, estado, passo, grau, riscoDeLesao, desfecho, eventos);
         ArrumarAMesaParaOProximoPasso(partida, carreira, ranking, passo, eventos);
 
-        return new PassoDaCarreira(luta, desfecho, eventos);
+        return new PassoDaCarreira(luta, desfecho, eventos, camp);
     }
 
     /// <summary>
@@ -185,6 +237,43 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
 
         carreira.LimparOfertas();
         estado.RegistrarRecusa();
+
+        ArrumarAMesaParaOProximoPasso(partida, carreira, ranking, passo, eventos);
+
+        return new PassoDaCarreira(null, null, eventos);
+    }
+
+    /// <summary>
+    /// O jogador passa um compromisso do calendário tratando a lesão.
+    /// </summary>
+    /// <remarks>
+    /// Repare que não há escolha nenhuma aqui, e é esse o ponto. Enquanto está
+    /// machucado o lutador não recebe ofertas, e a única coisa que ele pode
+    /// fazer com o próprio tempo é esperar. Aceitar a luta brutal foi a decisão;
+    /// perder o direito de decidir por um tempo é o preço dela.
+    /// </remarks>
+    public PassoDaCarreira Recuperar(Partida partida, Carreira carreira, RankingDoJogo ranking)
+    {
+        ArgumentNullException.ThrowIfNull(partida);
+        ArgumentNullException.ThrowIfNull(carreira);
+        ArgumentNullException.ThrowIfNull(ranking);
+
+        RegraDeNegocioException.Se(
+            carreira.Encerrada,
+            "Esta carreira já foi encerrada.");
+
+        RegraDeNegocioException.Se(
+            !carreira.Estado.EstaLesionado,
+            "O lutador não tem nenhuma lesão para tratar.");
+
+        var estado = carreira.Estado;
+        var passo = estado.AvancarPasso();
+        var eventos = new List<EventoDaCarreira>();
+
+        if (estado.TratarLesao())
+        {
+            eventos.Add(EventoDaCarreira.RecuperouDeLesao);
+        }
 
         ArrumarAMesaParaOProximoPasso(partida, carreira, ranking, passo, eventos);
 
@@ -222,13 +311,33 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         var eventos = new List<EventoDaCarreira>();
         LutaDaCarreira? ultimaLuta = null;
 
-        while (!carreira.Encerrada && carreira.Ofertas.Count > 0)
+        while (!carreira.Encerrada)
         {
+            // O jogador automático também se machuca, e enquanto a lesão dura
+            // tratá-la é a única jogada que existe. Sem isto o "simular o
+            // resto" pararia na primeira lesão e devolveria uma carreira no
+            // meio do caminho.
+            if (carreira.Estado.EstaLesionado)
+            {
+                eventos.AddRange(Recuperar(partida, carreira, ranking).Eventos);
+                continue;
+            }
+
+            if (carreira.Ofertas.Count == 0)
+            {
+                break;
+            }
+
             var passo = Aceitar(
                 partida,
                 carreira,
                 ranking,
-                EscolherOfertaMaisEquilibrada(carreira).Indice);
+                EscolherOfertaMaisEquilibrada(carreira).Indice,
+                // O jogador automático tapa o próprio buraco. É a escolha que
+                // o motor de luta premia: quem perde é o wrestler sem queixo e
+                // o nocauteador sem defesa de queda, não quem tem uma nota
+                // média mais baixa.
+                carreira.Estado.Atributos.MenorHabilidade());
 
             ultimaLuta = passo.Luta ?? ultimaLuta;
             eventos.AddRange(passo.Eventos);
@@ -316,6 +425,45 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         eventos.Add(EventoDaCarreira.Rebaixado);
 
         return null;
+    }
+
+    /// <summary>
+    /// Cobra o preço físico da luta que acabou de acontecer.
+    /// </summary>
+    /// <remarks>
+    /// O sorteio usa exatamente o risco que a oferta anunciou. O resultado da
+    /// luta não mexe na chance — mexe no tipo da lesão, porque quem sai
+    /// nocauteado sai com a cabeça machucada, e isso não é sorte, é
+    /// consequência.
+    /// </remarks>
+    private static void AvaliarLesao(
+        Partida partida,
+        EstadoDaCarreira estado,
+        int passo,
+        GrauDeDificuldade grau,
+        double risco,
+        ResultadoDaLutaSimulada desfecho,
+        List<EventoDaCarreira> eventos)
+    {
+        var sorteio = Sortear(partida, passo, FinalidadeDaLesao);
+
+        if (!sorteio.Acontece(risco))
+        {
+            return;
+        }
+
+        var perdeuPorNocaute =
+            desfecho.Resultado == ResultadoDaLuta.Derrota &&
+            desfecho.Metodo == MetodoDeEncerramento.Nocaute;
+
+        estado.Lesionar(SorteioDeLesao.Montar(
+            grau,
+            perdeuPorNocaute,
+            desfecho.RoundDoEncerramento,
+            estado.Idade,
+            sorteio));
+
+        eventos.Add(EventoDaCarreira.Lesionou);
     }
 
     /// <summary>Fecha o ano quando o calendário do degrau se esgota.</summary>
@@ -499,6 +647,16 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
 
     private void ColocarOfertasNaMesa(Partida partida, Carreira carreira, RankingDoJogo ranking)
     {
+        // Machucado não recebe oferta: a mesa fica vazia até o corpo voltar, e
+        // a única jogada possível passa a ser tratar a lesão. Ficar sem ofertas
+        // por lesão não é o mesmo que recusá-las — a organização entende.
+        if (carreira.Estado.EstaLesionado)
+        {
+            carreira.ReceberOfertas([]);
+
+            return;
+        }
+
         var sorteio = Sortear(partida, carreira.Estado.Passo, FinalidadeDasOfertas);
         var tabela = ranking.Da(carreira.Estado.Categoria);
 
@@ -603,8 +761,65 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
                 chamada: MontarChamada(carreira, disputaDeCinturao, defesaDeCinturao, desvios[posicao])));
         }
 
+        return TalvezOferecerRevanche(carreira, ofertas, sorteio);
+    }
+
+    /// <summary>
+    /// Troca a oferta mais dura da rodada por uma revanche, quando há conta a
+    /// acertar.
+    /// </summary>
+    /// <remarks>
+    /// Substitui em vez de acrescentar: a rodada continua tendo o mesmo número
+    /// de opções, e a revanche ocupa o lugar da luta perigosa porque é isso que
+    /// ela é. Aceitar continua custando alguma coisa.
+    /// <para>
+    /// O rival volta com os mesmos atributos com que venceu. É de propósito — o
+    /// reencontro é o único espelho honesto da carreira: mesmo adversário,
+    /// jogador diferente. Se ele evoluísse junto, a revanche mediria o
+    /// balanceamento do gerador, não o que o jogador construiu.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<OfertaDeLuta> TalvezOferecerRevanche(
+        Carreira carreira,
+        List<OfertaDeLuta> ofertas,
+        Sorteio sorteio)
+    {
+        if (ofertas.Count == 0 || !sorteio.Acontece(ChanceDeRevanche))
+        {
+            return ofertas;
+        }
+
+        if (carreira.RivalComContaAAcertar(JanelaDaRevanche) is not { } rival)
+        {
+            return ofertas;
+        }
+
+        var lugarDaLutaDura = ofertas.Count - 1;
+        var substituida = ofertas[lugarDaLutaDura];
+
+        ofertas[lugarDaLutaDura] = new OfertaDeLuta(
+            indice: substituida.Indice,
+            adversario: rival.Nome,
+            cartelDoAdversario: rival.Cartel,
+            atributosDoAdversario: rival.Atributos,
+            organizacao: substituida.Organizacao,
+            categoria: substituida.Categoria,
+            disputaDeCinturao: substituida.DisputaDeCinturao,
+            defesaDeCinturao: substituida.DefesaDeCinturao,
+            roundsProgramados: substituida.RoundsProgramados,
+            chamada: MontarChamadaDaRevanche(rival),
+            rival: rival);
+
         return ofertas;
     }
+
+    /// <summary>Como o cartaz venderia o reencontro.</summary>
+    private static string MontarChamadaDaRevanche(Rival rival) => rival.MetodoDoUltimoEncontro switch
+    {
+        MetodoDeEncerramento.Nocaute => "Revanche: ele te nocauteou",
+        MetodoDeEncerramento.Finalizacao => "Revanche: ele te finalizou",
+        _ => "Revanche: ele levou a decisão"
+    };
 
     private static bool EstaNaGrandeOrganizacao(EtapaDaCarreira etapa) =>
         etapa >= EtapaDaCarreira.GrandeOrganizacao;
@@ -676,11 +891,13 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
 
     /// <summary>
     /// Quanto esta vitória adianta na fila. Bater alguém acima do próprio nível
-    /// vale por duas lutas — é o que compensa o risco de aceitar a oferta dura
-    /// em vez da confortável.
+    /// — ou acertar a conta com quem já te venceu — vale por duas lutas, e é o
+    /// que compensa o risco de aceitar a oferta dura em vez da confortável.
     /// </summary>
     private static int PesoDaVitoria(EstadoDaCarreira estado, OfertaDeLuta oferta) =>
-        oferta.OverallDoAdversario >= estado.OverallAtual + VantagemQueValeDobro ? 2 : 1;
+        oferta.OverallDoAdversario >= estado.OverallAtual + VantagemQueValeDobro || oferta.EhRevanche
+            ? 2
+            : 1;
 
     /// <summary>
     /// Motivos para pendurar as luvas, do mais duro ao mais melancólico: a idade
@@ -704,6 +921,15 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         if (estado.Idade >= IdadeDeCorpoCastigado && estado.NocautesSofridos >= NocautesQueEncerramCarreira)
         {
             return MotivoDoEncerramento.CorpoCastigado;
+        }
+
+        // Uma lesão grave em um corpo que já colecionava lesões não é mais
+        // decisão de ninguém: é o médico que assina o fim.
+        if (estado.LesaoAtual is { Gravidade: GravidadeDaLesao.Grave } &&
+            estado.LesoesSofridas >= LesoesQueEncerramCarreira &&
+            estado.Idade >= IdadeDeCorpoCastigado)
+        {
+            return MotivoDoEncerramento.LesaoIncapacitante;
         }
 
         if (estado.Idade >= IdadeDeVeterano && estado.DerrotasSeguidas >= DerrotasQueAposentamVeterano)

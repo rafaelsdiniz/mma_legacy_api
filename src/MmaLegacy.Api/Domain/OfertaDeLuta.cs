@@ -71,6 +71,17 @@ public sealed class OfertaDeLuta
     /// <summary>A manchete da luta, do jeito que a organização a venderia.</summary>
     public string Chamada { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// Rival que esta oferta traz de volta, ou nulo se o adversário é novo.
+    /// </summary>
+    public Guid? RivalId { get; private set; }
+
+    /// <summary>Quantas vezes este adversário já venceu o jogador.</summary>
+    public int VitoriasDoAdversarioSobreVoce { get; private set; }
+
+    /// <summary>Quantas vezes o jogador já venceu este adversário.</summary>
+    public int DerrotasDoAdversarioParaVoce { get; private set; }
+
     /// <summary>Construtor sem parâmetros exigido pelo Entity Framework.</summary>
     private OfertaDeLuta()
     {
@@ -88,7 +99,8 @@ public sealed class OfertaDeLuta
         int roundsProgramados,
         string chamada,
         string? slugDoAdversario = null,
-        int? posicaoDoAdversario = null)
+        int? posicaoDoAdversario = null,
+        Rival? rival = null)
     {
         Id = Guid.CreateVersion7();
         Indice = indice;
@@ -103,6 +115,13 @@ public sealed class OfertaDeLuta
         DefesaDeCinturao = defesaDeCinturao;
         RoundsProgramados = roundsProgramados;
         Chamada = chamada;
+
+        if (rival is not null)
+        {
+            RivalId = rival.Id;
+            VitoriasDoAdversarioSobreVoce = rival.VitoriasSobreOJogador;
+            DerrotasDoAdversarioParaVoce = rival.DerrotasParaOJogador;
+        }
     }
 
     public decimal OverallDoAdversario => CalculadoraDeOverall.Calcular(AtributosDoAdversario);
@@ -110,4 +129,53 @@ public sealed class OfertaDeLuta
     public EstiloDeLuta EstiloDoAdversario => IdentificadorDeEstilo.Identificar(AtributosDoAdversario);
 
     public bool ValendoCinturao => DisputaDeCinturao || DefesaDeCinturao;
+
+    /// <summary>Já se enfrentaram antes.</summary>
+    public bool EhRevanche => RivalId is not null;
+
+    /// <summary>
+    /// Quão dura esta luta é para um lutador com o overall informado.
+    /// </summary>
+    /// <remarks>
+    /// Derivado, como o overall e o estilo do adversário, e pelo mesmo motivo:
+    /// o grau é uma relação entre dois lutadores, e o jogador de daqui a três
+    /// anos não é o mesmo que recebeu a oferta.
+    /// </remarks>
+    public GrauDeDificuldade DificuldadeContra(decimal overallDoJogador) =>
+        CalculadoraDeDificuldade.Calcular(OverallDoAdversario, overallDoJogador, ValendoCinturao);
+
+    /// <summary>
+    /// A chance de sair machucado desta luta, de 0 a 1.
+    /// </summary>
+    /// <remarks>
+    /// Mora aqui, e não solto no motor, porque é lido em dois lugares — a tela
+    /// que mostra o risco antes da decisão e o sorteio que o cobra depois. Um
+    /// método só garante que os dois falem do mesmo número.
+    /// </remarks>
+    public double RiscoDeLesaoPara(
+        EstadoDaCarreira estado,
+        IntensidadeDoTreino intensidade = IntensidadeDoTreino.Padrao)
+    {
+        ArgumentNullException.ThrowIfNull(estado);
+
+        return CalculadoraDeLesao.Risco(
+            DificuldadeContra(estado.OverallAtual),
+            estado.Idade,
+            estado.Atributos[Habilidade.Resistencia],
+            intensidade);
+    }
+
+    /// <summary>
+    /// O risco desta luta em cada intensidade de camp possível.
+    /// </summary>
+    /// <remarks>
+    /// Vai inteiro para a tela porque a intensidade é escolhida ali, junto com
+    /// a luta. Mandar só o risco padrão e deixar o front multiplicar por 0,7 e
+    /// por 1,4 seria ensinar a regra do jogo à camada que não deveria conhecê-la
+    /// — e um dia as duas versões dela discordariam.
+    /// </remarks>
+    public IReadOnlyDictionary<IntensidadeDoTreino, double> RiscoDeLesaoPorIntensidade(
+        EstadoDaCarreira estado) =>
+        Enum.GetValues<IntensidadeDoTreino>()
+            .ToDictionary(intensidade => intensidade, intensidade => RiscoDeLesaoPara(estado, intensidade));
 }

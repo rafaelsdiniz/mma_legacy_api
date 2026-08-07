@@ -41,5 +41,11 @@ public enum EventoDaCarreira
     FicouInativo = 10,
 
     /// <summary>A carreira acabou.</summary>
-    CarreiraEncerrada = 11
+    CarreiraEncerrada = 11,
+
+    /// <summary>Saiu machucado da luta e vai ficar parado se tratando.</summary>
+    Lesionou = 12,
+
+    /// <summary>A lesão sarou e ele volta a receber ofertas.</summary>
+    RecuperouDeLesao = 13
 }
