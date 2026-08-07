@@ -5,11 +5,11 @@ using MmaLegacy.Api.Services;
 namespace MmaLegacy.Api.Controllers;
 
 /// <summary>
-/// A carreira jogada: estreia, ofertas de luta e o desfecho de cada decisÃ£o.
+/// A carreira jogada: estreia, ofertas de luta e o desfecho de cada decisão.
 /// </summary>
 /// <remarks>
 /// Todas as jogadas devolvem a mesma <see cref="SituacaoDaCarreiraResposta"/>.
-/// A tela nÃ£o precisa saber qual endpoint chamou para saber o que desenhar:
+/// A tela não precisa saber qual endpoint chamou para saber o que desenhar:
 /// aceitar, recusar, aposentar e simular o resto entregam o mesmo retrato do
 /// mundo depois da jogada.
 /// </remarks>
@@ -22,12 +22,12 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
     /// Estreia o lutador e devolve a primeira rodada de ofertas.
     /// </summary>
     /// <remarks>
-    /// Idempotente: chamar de novo devolve a carreira que jÃ¡ estÃ¡ em andamento,
+    /// Idempotente: chamar de novo devolve a carreira que já está em andamento,
     /// sem reiniciar nada.
     /// </remarks>
     /// <response code="200">Carreira em andamento, com as ofertas na mesa.</response>
     /// <response code="404">Partida inexistente.</response>
-    /// <response code="409">O draft ainda nÃ£o foi concluÃ­do.</response>
+    /// <response code="409">O draft ainda não foi concluído.</response>
     [HttpPost("estrear")]
     [ProducesResponseType<SituacaoDaCarreiraResposta>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -41,10 +41,10 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
         return Ok(Responder(jogada));
     }
 
-    /// <summary>Devolve a situaÃ§Ã£o atual da carreira, sem alterar nada.</summary>
-    /// <response code="200">SituaÃ§Ã£o da carreira.</response>
+    /// <summary>Devolve a situação atual da carreira, sem alterar nada.</summary>
+    /// <response code="200">Situação da carreira.</response>
     /// <response code="404">Partida inexistente.</response>
-    /// <response code="409">O lutador ainda nÃ£o estreou.</response>
+    /// <response code="409">O lutador ainda não estreou.</response>
     [HttpGet]
     [ProducesResponseType<SituacaoDaCarreiraResposta>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -59,12 +59,12 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
     }
 
     /// <summary>
-    /// Aceita uma das ofertas na mesa. A luta Ã© simulada round a round e vem
+    /// Aceita uma das ofertas na mesa. A luta é simulada round a round e vem
     /// junto na resposta.
     /// </summary>
     /// <response code="200">Luta disputada e carreira atualizada.</response>
     /// <response code="404">Partida inexistente.</response>
-    /// <response code="409">NÃ£o hÃ¡ essa oferta na mesa, ou a carreira jÃ¡ acabou.</response>
+    /// <response code="409">Não há essa oferta na mesa, ou a carreira já acabou.</response>
     [HttpPost("aceitar")]
     [ProducesResponseType<SituacaoDaCarreiraResposta>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -88,13 +88,13 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
     /// Recusa a rodada inteira de ofertas.
     /// </summary>
     /// <remarks>
-    /// NÃ£o Ã© de graÃ§a: consome o mesmo espaÃ§o de calendÃ¡rio que uma luta e apaga
-    /// o progresso rumo Ã  promoÃ§Ã£o. TrÃªs recusas seguidas e a organizaÃ§Ã£o
+    /// Não é de graça: consome o mesmo espaço de calendário que uma luta e apaga
+    /// o progresso rumo à promoção. Três recusas seguidas e a organização
     /// dispensa o lutador.
     /// </remarks>
     /// <response code="200">Rodada recusada e carreira atualizada.</response>
     /// <response code="404">Partida inexistente.</response>
-    /// <response code="409">NÃ£o hÃ¡ ofertas na mesa, ou a carreira jÃ¡ acabou.</response>
+    /// <response code="409">Não há ofertas na mesa, ou a carreira já acabou.</response>
     [HttpPost("recusar")]
     [ProducesResponseType<SituacaoDaCarreiraResposta>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -108,10 +108,10 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
         return Ok(Responder(jogada));
     }
 
-    /// <summary>Pendura as luvas por vontade prÃ³pria e fecha o veredito de legado.</summary>
+    /// <summary>Pendura as luvas por vontade própria e fecha o veredito de legado.</summary>
     /// <response code="200">Carreira encerrada.</response>
     /// <response code="404">Partida inexistente.</response>
-    /// <response code="409">A carreira jÃ¡ estava encerrada.</response>
+    /// <response code="409">A carreira já estava encerrada.</response>
     [HttpPost("aposentar")]
     [ProducesResponseType<SituacaoDaCarreiraResposta>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -126,12 +126,12 @@ public sealed class CarreirasController(ServicoDeCarreira servicoDeCarreira) : C
     }
 
     /// <summary>
-    /// Entrega a carreira ao jogador automÃ¡tico, que a leva do ponto atual atÃ© a
+    /// Entrega a carreira ao jogador automático, que a leva do ponto atual até a
     /// aposentadoria.
     /// </summary>
-    /// <response code="200">Carreira simulada atÃ© o fim.</response>
+    /// <response code="200">Carreira simulada até o fim.</response>
     /// <response code="404">Partida inexistente.</response>
-    /// <response code="409">A carreira jÃ¡ estava encerrada.</response>
+    /// <response code="409">A carreira já estava encerrada.</response>
     [HttpPost("simular-o-resto")]
     [ProducesResponseType<SituacaoDaCarreiraResposta>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
