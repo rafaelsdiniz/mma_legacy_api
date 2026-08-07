@@ -117,6 +117,35 @@ public sealed class BalanceamentoTeste(ITestOutputHelper saida)
             carreira.IdadeDeAposentadoria > carreira.IdadeDeEstreia);
     }
 
+    /// <summary>
+    /// Lesão precisa ser um acidente, não uma rotina nem uma lenda.
+    /// </summary>
+    /// <remarks>
+    /// Se quase toda carreira passasse ilesa, o grau de dificuldade deixaria de
+    /// pesar na decisão; se quase toda luta machucasse, o jogador só aceitaria
+    /// as tranquilas e o jogo viraria uma fila de vitórias fáceis. A faixa é
+    /// larga porque o que importa é o patamar.
+    /// </remarks>
+    [Fact]
+    public void ALesaoAconteceOBastanteParaPesarNaDecisaoESemDominarACarreira()
+    {
+        var carreiras = SimularCarreiras(85);
+
+        var comAlgumaLesao = Percentual(
+            carreiras.Count(carreira => carreira.Estado.LesoesSofridas > 0),
+            carreiras.Count);
+
+        var lesoesPorLuta = Percentual(
+            carreiras.Sum(carreira => carreira.Estado.LesoesSofridas),
+            carreiras.Sum(carreira => carreira.TotalDeLutas));
+
+        saida.WriteLine($"carreiras com ao menos uma lesão: {comAlgumaLesao:F1}%");
+        saida.WriteLine($"lesões por luta disputada ......: {lesoesPorLuta:F1}%");
+
+        comAlgumaLesao.Should().BeInRange(25, 90);
+        lesoesPorLuta.Should().BeInRange(2, 18);
+    }
+
     private static List<Api.Domain.Carreira> SimularCarreiras(int notaDoBuild)
     {
         var motor = new MotorDeCarreira(new MotorDeLuta(), new GeradorDeAdversarios());
