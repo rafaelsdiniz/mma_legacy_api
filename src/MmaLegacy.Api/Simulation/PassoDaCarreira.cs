@@ -20,10 +20,15 @@ namespace MmaLegacy.Api.Simulation;
 /// lutas de uma carreira custaria caro para algo que ninguém relê.
 /// </param>
 /// <param name="Eventos">O que mudou na carreira, na ordem em que aconteceu.</param>
+/// <param name="Camp">
+/// O que o treino que antecedeu a luta produziu. Nulo nas jogadas que não
+/// passam por um camp, como recusar e se recuperar.
+/// </param>
 public sealed record PassoDaCarreira(
     LutaDaCarreira? Luta,
     ResultadoDaLutaSimulada? Desfecho,
-    IReadOnlyList<EventoDaCarreira> Eventos)
+    IReadOnlyList<EventoDaCarreira> Eventos,
+    ResultadoDoCamp? Camp = null)
 {
     public static PassoDaCarreira Vazio => new(null, null, []);
 }

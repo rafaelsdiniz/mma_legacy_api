@@ -28,6 +28,17 @@ public static class CalculadoraDeLesao
         [GrauDeDificuldade.Brutal] = 0.20
     };
 
+
+    /// <summary>
+    /// Quanto cada intensidade de camp mexe no risco. Treino pesado põe o
+    /// lutador no octógono já castigado; camp leve o poupa.
+    /// </summary>
+    private static readonly Dictionary<IntensidadeDoTreino, double> PesoDaIntensidade = new()
+    {
+        [IntensidadeDoTreino.Leve] = 0.7,
+        [IntensidadeDoTreino.Padrao] = 1.0,
+        [IntensidadeDoTreino.Pesado] = 1.4
+    };
     /// <summary>Idade a partir da qual o corpo começa a cobrar juros.</summary>
     private const int IdadeEmQueOCorpoCobra = 30;
 
@@ -49,11 +60,19 @@ public static class CalculadoraDeLesao
     /// <param name="grau">Quão dura é a luta para ele.</param>
     /// <param name="idade">Idade do lutador hoje.</param>
     /// <param name="resistencia">Nota de resistência atual, que é o que segura o corpo.</param>
-    public static double Risco(GrauDeDificuldade grau, int idade, int resistencia)
+    /// <param name="intensidade">Com que peso ele treinou para esta luta.</param>
+    public static double Risco(
+        GrauDeDificuldade grau,
+        int idade,
+        int resistencia,
+        IntensidadeDoTreino intensidade = IntensidadeDoTreino.Padrao)
     {
         var porIdade = 1 + (Math.Max(0, idade - IdadeEmQueOCorpoCobra) * AcrescimoPorAnoDeIdade);
         var porResistencia = 1 + ((ResistenciaDeReferencia - resistencia) / 100.0 * PesoDaResistencia);
 
-        return Math.Clamp(RiscoBase[grau] * porIdade * porResistencia, 0, RiscoMaximo);
+        return Math.Clamp(
+            RiscoBase[grau] * porIdade * porResistencia * PesoDaIntensidade[intensidade],
+            0,
+            RiscoMaximo);
     }
 }

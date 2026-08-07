@@ -86,6 +86,7 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     private const int FinalidadeDaEvolucao = 2;
     private const int FinalidadeDasOfertas = 3;
     private const int FinalidadeDaLesao = 4;
+    private const int FinalidadeDoCamp = 5;
 
     /// <summary>
     /// Estreia o lutador: cria a carreira e põe a primeira luta na mesa.
@@ -112,11 +113,17 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// ela.
     /// </summary>
     /// <param name="indiceDaOferta">Índice da oferta escolhida, começando em 1.</param>
+    /// <param name="focoDoCamp">
+    /// Em que o lutador vai treinar antes da luta, ou nulo para um camp sem foco.
+    /// </param>
+    /// <param name="intensidade">Com que peso ele vai treinar, e a que risco.</param>
     public PassoDaCarreira Aceitar(
         Partida partida,
         Carreira carreira,
         RankingDoJogo ranking,
-        int indiceDaOferta)
+        int indiceDaOferta,
+        Habilidade? focoDoCamp = null,
+        IntensidadeDoTreino intensidade = IntensidadeDoTreino.Padrao)
     {
         ArgumentNullException.ThrowIfNull(partida);
         ArgumentNullException.ThrowIfNull(carreira);
@@ -130,9 +137,25 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         // e o número que o jogador leu na oferta deixaria de ser o que foi
         // cobrado dele.
         var grau = oferta.DificuldadeContra(estado.OverallAtual);
-        var riscoDeLesao = oferta.RiscoDeLesaoPara(estado);
+        var riscoDeLesao = oferta.RiscoDeLesaoPara(estado, intensidade);
         var passo = estado.AvancarPasso();
         var eventos = new List<EventoDaCarreira>();
+
+        // O camp acontece antes da luta, e por isso o lutador entra no octógono
+        // com o ponto que acabou de ganhar. O risco de lesão, não: aquele
+        // continua sendo o que a oferta anunciou, medido no corpo que aceitou.
+        var camp = CampoDeTreino.Rodar(
+            estado.Atributos,
+            partida.ExigirLutadorMontado().Atributos,
+            focoDoCamp,
+            intensidade,
+            estado.Idade,
+            Sortear(partida, passo, FinalidadeDoCamp));
+
+        if (camp.AtributosDepois is { } atributosDepoisDoCamp)
+        {
+            estado.AplicarCamp(atributosDepoisDoCamp);
+        }
 
         var adversario = PerfilDeCombate.Montar(oferta.Adversario, oferta.AtributosDoAdversario);
         var desfecho = motorDeLuta.Simular(
@@ -166,7 +189,7 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         AvaliarLesao(partida, estado, passo, grau, riscoDeLesao, desfecho, eventos);
         ArrumarAMesaParaOProximoPasso(partida, carreira, ranking, passo, eventos);
 
-        return new PassoDaCarreira(luta, desfecho, eventos);
+        return new PassoDaCarreira(luta, desfecho, eventos, camp);
     }
 
     /// <summary>
@@ -292,7 +315,12 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
                 partida,
                 carreira,
                 ranking,
-                EscolherOfertaMaisEquilibrada(carreira).Indice);
+                EscolherOfertaMaisEquilibrada(carreira).Indice,
+                // O jogador automático tapa o próprio buraco. É a escolha que
+                // o motor de luta premia: quem perde é o wrestler sem queixo e
+                // o nocauteador sem defesa de queda, não quem tem uma nota
+                // média mais baixa.
+                carreira.Estado.Atributos.MenorHabilidade());
 
             ultimaLuta = passo.Luta ?? ultimaLuta;
             eventos.AddRange(passo.Eventos);
