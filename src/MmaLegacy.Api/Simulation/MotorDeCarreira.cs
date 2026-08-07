@@ -90,14 +90,15 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// A carreira volta solta, sem ser presa à partida. Quem faz esse vínculo é
     /// o serviço, que também é quem persiste — o motor não conhece banco.
     /// </remarks>
-    public Carreira Iniciar(Partida partida)
+    public Carreira Iniciar(Partida partida, RankingDoJogo ranking)
     {
         ArgumentNullException.ThrowIfNull(partida);
+        ArgumentNullException.ThrowIfNull(ranking);
 
         var lutador = partida.ExigirLutadorMontado();
         var carreira = Carreira.Iniciar(partida.Id, partida.Ficha, lutador);
 
-        ColocarOfertasNaMesa(partida, carreira);
+        ColocarOfertasNaMesa(partida, carreira, ranking);
 
         return carreira;
     }
@@ -107,10 +108,15 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// ela.
     /// </summary>
     /// <param name="indiceDaOferta">Índice da oferta escolhida, começando em 1.</param>
-    public PassoDaCarreira Aceitar(Partida partida, Carreira carreira, int indiceDaOferta)
+    public PassoDaCarreira Aceitar(
+        Partida partida,
+        Carreira carreira,
+        RankingDoJogo ranking,
+        int indiceDaOferta)
     {
         ArgumentNullException.ThrowIfNull(partida);
         ArgumentNullException.ThrowIfNull(carreira);
+        ArgumentNullException.ThrowIfNull(ranking);
 
         var estado = carreira.Estado;
         var oferta = carreira.ExigirOferta(indiceDaOferta);
@@ -145,8 +151,8 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         carreira.RegistrarLuta(luta);
         estado.RegistrarResultado(desfecho.Resultado, desfecho.Metodo, pesoDaVitoria);
 
-        AvancarNaEscada(estado, desfecho.Resultado, eventos);
-        ArrumarAMesaParaOProximoPasso(partida, carreira, passo, eventos);
+        AvancarNaEscada(estado, oferta, desfecho.Resultado, eventos);
+        ArrumarAMesaParaOProximoPasso(partida, carreira, ranking, passo, eventos);
 
         return new PassoDaCarreira(luta, desfecho, eventos);
     }
@@ -159,10 +165,11 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// apaga o caso que o lutador vinha construindo para subir de degrau. Três
     /// recusas seguidas e a organização o dispensa.
     /// </remarks>
-    public PassoDaCarreira Recusar(Partida partida, Carreira carreira)
+    public PassoDaCarreira Recusar(Partida partida, Carreira carreira, RankingDoJogo ranking)
     {
         ArgumentNullException.ThrowIfNull(partida);
         ArgumentNullException.ThrowIfNull(carreira);
+        ArgumentNullException.ThrowIfNull(ranking);
 
         RegraDeNegocioException.Se(
             carreira.Encerrada,
@@ -179,7 +186,7 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         carreira.LimparOfertas();
         estado.RegistrarRecusa();
 
-        ArrumarAMesaParaOProximoPasso(partida, carreira, passo, eventos);
+        ArrumarAMesaParaOProximoPasso(partida, carreira, ranking, passo, eventos);
 
         return new PassoDaCarreira(null, null, eventos);
     }
@@ -206,17 +213,22 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// de overall mais próximo do próprio lutador imita um empresário sensato:
     /// nem só luta fácil, que não leva a lugar nenhum, nem só luta impossível.
     /// </remarks>
-    public PassoDaCarreira SimularOResto(Partida partida, Carreira carreira)
+    public PassoDaCarreira SimularOResto(Partida partida, Carreira carreira, RankingDoJogo ranking)
     {
         ArgumentNullException.ThrowIfNull(partida);
         ArgumentNullException.ThrowIfNull(carreira);
+        ArgumentNullException.ThrowIfNull(ranking);
 
         var eventos = new List<EventoDaCarreira>();
         LutaDaCarreira? ultimaLuta = null;
 
         while (!carreira.Encerrada && carreira.Ofertas.Count > 0)
         {
-            var passo = Aceitar(partida, carreira, EscolherOfertaMaisEquilibrada(carreira).Indice);
+            var passo = Aceitar(
+                partida,
+                carreira,
+                ranking,
+                EscolherOfertaMaisEquilibrada(carreira).Indice);
 
             ultimaLuta = passo.Luta ?? ultimaLuta;
             eventos.AddRange(passo.Eventos);
@@ -225,13 +237,22 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         return new PassoDaCarreira(ultimaLuta, null, eventos);
     }
 
-    /// <summary>Estreia e joga a carreira inteira de uma vez.</summary>
-    public Carreira Simular(Partida partida)
+    /// <summary>
+    /// Estreia e joga a carreira inteira de uma vez.
+    /// </summary>
+    /// <param name="ranking">
+    /// Quando omitido, a carreira acontece só contra adversários fictícios. É
+    /// assim que os testes de balanceamento medem milhares de carreiras sem
+    /// precisar de banco.
+    /// </param>
+    public Carreira Simular(Partida partida, RankingDoJogo? ranking = null)
     {
         ArgumentNullException.ThrowIfNull(partida);
 
-        var carreira = Iniciar(partida);
-        SimularOResto(partida, carreira);
+        var tabelas = ranking ?? RankingDoJogo.Vazio;
+        var carreira = Iniciar(partida, tabelas);
+
+        SimularOResto(partida, carreira, tabelas);
 
         return carreira;
     }
@@ -244,6 +265,7 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     private void ArrumarAMesaParaOProximoPasso(
         Partida partida,
         Carreira carreira,
+        RankingDoJogo ranking,
         int passo,
         List<EventoDaCarreira> eventos)
     {
@@ -260,7 +282,7 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
             return;
         }
 
-        ColocarOfertasNaMesa(partida, carreira);
+        ColocarOfertasNaMesa(partida, carreira, ranking);
     }
 
     /// <summary>
@@ -331,13 +353,14 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
     /// </summary>
     private static void AvancarNaEscada(
         EstadoDaCarreira estado,
+        OfertaDeLuta oferta,
         ResultadoDaLuta resultado,
         List<EventoDaCarreira> eventos)
     {
         switch (resultado)
         {
             case ResultadoDaLuta.Vitoria:
-                PromoverAposVitoria(estado, eventos);
+                PromoverAposVitoria(estado, oferta, eventos);
                 break;
 
             case ResultadoDaLuta.Derrota:
@@ -351,8 +374,22 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         }
     }
 
-    private static void PromoverAposVitoria(EstadoDaCarreira estado, List<EventoDaCarreira> eventos)
+    private static void PromoverAposVitoria(
+        EstadoDaCarreira estado,
+        OfertaDeLuta oferta,
+        List<EventoDaCarreira> eventos)
     {
+        // Vitória sobre alguém do ranking: a posição dele passa a ser sua. É
+        // isso que substitui a contagem abstrata de vitórias por degrau assim
+        // que o jogador chega ao UFC.
+        if (oferta.PosicaoDoAdversario is { } vaga)
+        {
+            PromoverPeloRanking(estado, vaga, eventos);
+            return;
+        }
+
+        // Sem ranking real por perto — circuito regional, LFA, ou uma simulação
+        // sem acervo carregado —, a escada antiga continua valendo.
         switch (estado.Etapa)
         {
             case EtapaDaCarreira.DisputaDeCinturao:
@@ -380,6 +417,43 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         }
     }
 
+    private static void PromoverPeloRanking(
+        EstadoDaCarreira estado,
+        int vaga,
+        List<EventoDaCarreira> eventos)
+    {
+        if (estado.EhCampeao)
+        {
+            estado.DefenderCinturao();
+            eventos.Add(EventoDaCarreira.CinturaoDefendido);
+            return;
+        }
+
+        if (vaga == TabelaDaDivisao.PosicaoDoCampeao)
+        {
+            estado.ConquistarCinturao();
+            eventos.Add(EventoDaCarreira.CinturaoConquistado);
+            return;
+        }
+
+        var estreouNoRanking = !estado.EstaRanqueado;
+        var posicaoAnterior = estado.PosicaoNoRanking;
+
+        estado.AssumirPosicaoNoRanking(vaga);
+
+        if (estreouNoRanking || estado.PosicaoNoRanking < posicaoAnterior)
+        {
+            eventos.Add(EventoDaCarreira.Promovido);
+        }
+
+        // Chegar a número um é ganhar o direito de desafiar. A luta seguinte já
+        // é pelo cinturão, e o jogador merece ser avisado disso.
+        if (estado.Etapa == EtapaDaCarreira.DisputaDeCinturao)
+        {
+            eventos.Add(EventoDaCarreira.DisputaDeCinturaoMarcada);
+        }
+    }
+
     /// <summary>
     /// Perder o cinturão devolve o lutador ao topo do ranking, não ao começo. A
     /// queda de degrau fora do título é assunto da dispensa, não da derrota
@@ -390,12 +464,14 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         switch (estado.Etapa)
         {
             case EtapaDaCarreira.Campeao:
-                estado.PerderPosicaoDeTitulo();
+                estado.CairParaODesafiante();
                 eventos.Add(EventoDaCarreira.CinturaoPerdido);
                 break;
 
             case EtapaDaCarreira.DisputaDeCinturao:
-                estado.PerderPosicaoDeTitulo();
+                // Perder a disputa não custa o número um: custa a vez. O
+                // desafiante derrotado volta para a fila, ainda no topo dela.
+                estado.CairParaODesafiante();
                 break;
         }
     }
@@ -421,14 +497,83 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         return true;
     }
 
-    private void ColocarOfertasNaMesa(Partida partida, Carreira carreira)
+    private void ColocarOfertasNaMesa(Partida partida, Carreira carreira, RankingDoJogo ranking)
     {
         var sorteio = Sortear(partida, carreira.Estado.Passo, FinalidadeDasOfertas);
+        var tabela = ranking.Da(carreira.Estado.Categoria);
 
-        carreira.ReceberOfertas(GerarOfertas(carreira, sorteio));
+        carreira.ReceberOfertas(GerarOfertas(carreira, tabela, sorteio));
     }
 
-    private IReadOnlyList<OfertaDeLuta> GerarOfertas(Carreira carreira, Sorteio sorteio)
+    private IReadOnlyList<OfertaDeLuta> GerarOfertas(
+        Carreira carreira,
+        TabelaDaDivisao tabela,
+        Sorteio sorteio)
+    {
+        var estado = carreira.Estado;
+
+        // Da grande organização para cima o adversário é gente de verdade: o
+        // ranking da divisão é a escada, e enfrentar o décimo segundo colocado
+        // significa alguma coisa que enfrentar um nome inventado nunca vai
+        // significar.
+        return EstaNaGrandeOrganizacao(estado.Etapa) && !tabela.EstaVazia
+            ? GerarOfertasDoRanking(carreira, tabela)
+            : GerarOfertasFicticias(carreira, sorteio);
+    }
+
+    /// <summary>
+    /// Monta a rodada com atletas reais da divisão, escolhidos a partir de onde
+    /// o jogador está no ranking.
+    /// </summary>
+    private static IReadOnlyList<OfertaDeLuta> GerarOfertasDoRanking(
+        Carreira carreira,
+        TabelaDaDivisao tabela)
+    {
+        var estado = carreira.Estado;
+
+        // Campeão defende contra o primeiro da fila; quem venceu o número um
+        // desafia o campeão. Nos dois casos a luta é uma só, e não se escolhe.
+        var alvos = estado.Etapa switch
+        {
+            EtapaDaCarreira.Campeao => [1],
+            EtapaDaCarreira.DisputaDeCinturao => [TabelaDaDivisao.PosicaoDoCampeao],
+            _ => tabela.AlvosDe(estado.PosicaoNoRanking, RegrasDaCarreira.OfertasNaMesa(estado.Etapa))
+        };
+
+        var ofertas = new List<OfertaDeLuta>(alvos.Count);
+
+        foreach (var alvo in alvos)
+        {
+            if (tabela.Em(alvo) is not { } adversario)
+            {
+                continue;
+            }
+
+            var valendoCinturao = alvo == TabelaDaDivisao.PosicaoDoCampeao || estado.EhCampeao;
+
+            ofertas.Add(new OfertaDeLuta(
+                indice: ofertas.Count + 1,
+                adversario: adversario.Nome,
+                cartelDoAdversario: string.Empty,
+                atributosDoAdversario: adversario.Atributos,
+                organizacao: NivelDaOrganizacao.GrandeOrganizacao,
+                categoria: estado.Categoria,
+                disputaDeCinturao: alvo == TabelaDaDivisao.PosicaoDoCampeao,
+                defesaDeCinturao: estado.EhCampeao,
+                roundsProgramados: valendoCinturao ? RoundsDeLutaDeCinturao : RoundsDeLutaComum,
+                chamada: MontarChamadaDoRanking(estado, alvo),
+                slugDoAdversario: adversario.Slug,
+                posicaoDoAdversario: alvo));
+        }
+
+        return ofertas;
+    }
+
+    /// <summary>
+    /// Monta a rodada com adversários inventados, para os degraus em que o
+    /// jogador ainda não chega perto de ninguém ranqueado.
+    /// </summary>
+    private IReadOnlyList<OfertaDeLuta> GerarOfertasFicticias(Carreira carreira, Sorteio sorteio)
     {
         var estado = carreira.Estado;
         var disputaDeCinturao = estado.Etapa == EtapaDaCarreira.DisputaDeCinturao;
@@ -459,6 +604,28 @@ public sealed class MotorDeCarreira(MotorDeLuta motorDeLuta, GeradorDeAdversario
         }
 
         return ofertas;
+    }
+
+    private static bool EstaNaGrandeOrganizacao(EtapaDaCarreira etapa) =>
+        etapa >= EtapaDaCarreira.GrandeOrganizacao;
+
+    private static string MontarChamadaDoRanking(EstadoDaCarreira estado, int alvo)
+    {
+        if (estado.EhCampeao)
+        {
+            return "Defesa de cinturão contra o desafiante número 1";
+        }
+
+        if (alvo == TabelaDaDivisao.PosicaoDoCampeao)
+        {
+            var categoria = Categorias.NomeDeExibicao(estado.Categoria).ToLowerInvariant();
+
+            return $"Disputa do cinturão dos {categoria}s";
+        }
+
+        return estado.PosicaoNoRanking is null
+            ? $"Vença o #{alvo} e entre no ranking"
+            : $"Vença o #{alvo} e tome a posição dele";
     }
 
     /// <summary>Como a organização venderia esta luta no cartaz.</summary>

@@ -27,22 +27,23 @@ public sealed class ServicoDeCarreira(
     /// carreira chama isto ao abrir, e recarregar a página não pode significar
     /// sortear outra vida para o mesmo lutador.
     /// </remarks>
-    public async Task<Partida> EstrearAsync(Guid partidaId, CancellationToken cancelamento = default)
+    public async Task<JogadaDaCarreira> EstrearAsync(
+        Guid partidaId,
+        CancellationToken cancelamento = default)
     {
         var partida = await servicoDePartida.ObterAsync(partidaId, cancelamento);
+        var ranking = await CarregarRankingAsync(cancelamento);
 
-        if (partida.Carreira is not null)
+        if (partida.Carreira is null)
         {
-            return partida;
+            var novaCarreira = motorDeCarreira.Iniciar(partida, ranking);
+
+            partida.EstrearCarreira(novaCarreira);
+            contexto.Carreiras.Add(novaCarreira);
+            await contexto.SaveChangesAsync(cancelamento);
         }
 
-        var carreira = motorDeCarreira.Iniciar(partida);
-
-        partida.EstrearCarreira(carreira);
-        contexto.Carreiras.Add(carreira);
-        await contexto.SaveChangesAsync(cancelamento);
-
-        return partida;
+        return Montar(partida, PassoDaCarreira.Vazio, ranking, posicaoAnterior: null);
     }
 
     /// <summary>O jogador aceita uma das ofertas na mesa e a luta acontece.</summary>
@@ -53,7 +54,8 @@ public sealed class ServicoDeCarreira(
         CancellationToken cancelamento = default) =>
         JogarAsync(
             partidaId,
-            (partida, carreira) => motorDeCarreira.Aceitar(partida, carreira, indiceDaOferta),
+            (partida, carreira, ranking) =>
+                motorDeCarreira.Aceitar(partida, carreira, ranking, indiceDaOferta),
             cancelamento);
 
     /// <summary>O jogador recusa a rodada inteira e fica parado.</summary>
@@ -62,7 +64,7 @@ public sealed class ServicoDeCarreira(
 
     /// <summary>O jogador pendura as luvas por vontade própria.</summary>
     public Task<JogadaDaCarreira> AposentarAsync(Guid partidaId, CancellationToken cancelamento = default) =>
-        JogarAsync(partidaId, motorDeCarreira.Aposentar, cancelamento);
+        JogarAsync(partidaId, (partida, carreira, _) => motorDeCarreira.Aposentar(partida, carreira), cancelamento);
 
     /// <summary>
     /// Entrega a carreira ao jogador automático, que a leva do ponto atual até a
@@ -73,9 +75,30 @@ public sealed class ServicoDeCarreira(
         CancellationToken cancelamento = default) =>
         JogarAsync(partidaId, motorDeCarreira.SimularOResto, cancelamento);
 
-    /// <summary>Recupera a partida com a carreira, sem alterar nada.</summary>
-    public Task<Partida> ObterAsync(Guid partidaId, CancellationToken cancelamento = default) =>
-        servicoDePartida.ObterAsync(partidaId, cancelamento);
+    /// <summary>Recupera a situação atual da carreira, sem alterar nada.</summary>
+    public async Task<JogadaDaCarreira> ObterAsync(
+        Guid partidaId,
+        CancellationToken cancelamento = default)
+    {
+        var partida = await servicoDePartida.ObterAsync(partidaId, cancelamento);
+
+        return Montar(
+            partida,
+            PassoDaCarreira.Vazio,
+            await CarregarRankingAsync(cancelamento),
+            posicaoAnterior: null);
+    }
+
+    /// <summary>Junta a partida ao ranking da divisão em que ela está agora.</summary>
+    private static JogadaDaCarreira Montar(
+        Partida partida,
+        PassoDaCarreira passo,
+        RankingDoJogo ranking,
+        int? posicaoAnterior) => new(
+        partida,
+        passo,
+        ranking.Da(partida.ExigirCarreira().Estado.Categoria),
+        posicaoAnterior);
 
     /// <summary>
     /// O esqueleto comum de toda jogada: carrega, exige que a carreira exista,
@@ -83,14 +106,17 @@ public sealed class ServicoDeCarreira(
     /// </summary>
     private async Task<JogadaDaCarreira> JogarAsync(
         Guid partidaId,
-        Func<Partida, Carreira, PassoDaCarreira> movimento,
+        Func<Partida, Carreira, RankingDoJogo, PassoDaCarreira> movimento,
         CancellationToken cancelamento)
     {
         var partida = await servicoDePartida.ObterAsync(partidaId, cancelamento);
         var carreira = partida.ExigirCarreira();
-        var totalDeLutasAntesDaJogada = carreira.TotalDeLutas;
+        var ranking = await CarregarRankingAsync(cancelamento);
 
-        var passo = movimento(partida, carreira);
+        var totalDeLutasAntesDaJogada = carreira.TotalDeLutas;
+        var posicaoAntesDaJogada = carreira.Estado.PosicaoNoRanking;
+
+        var passo = movimento(partida, carreira, ranking);
 
         // A carreira já está rastreada e a luta usa uma chave natural atribuída
         // (CarreiraId, Ordem). Sem declarar que a linha acabou de nascer, o EF
@@ -103,9 +129,43 @@ public sealed class ServicoDeCarreira(
 
         await contexto.SaveChangesAsync(cancelamento);
 
-        return new JogadaDaCarreira(partida, passo);
+        return Montar(partida, passo, ranking, posicaoAntesDaJogada);
     }
+
+    /// <summary>
+    /// Carrega os ranqueados das oito divisões.
+    /// </summary>
+    /// <remarks>
+    /// Vêm todas as divisões, e não só a do jogador, porque um campeão
+    /// consolidado pode subir de peso no meio do passo — e aí os adversários
+    /// da rodada seguinte precisam sair da divisão nova.
+    /// <para>
+    /// A leitura é sem rastreamento: estes atletas são referência de consulta,
+    /// nunca são alterados pela carreira. O ranking oficial do acervo não muda
+    /// quando o jogador sobe; o que muda é a posição dele, guardada na carreira.
+    /// </para>
+    /// </remarks>
+    private async Task<RankingDoJogo> CarregarRankingAsync(CancellationToken cancelamento) =>
+        new(await contexto.Lutadores
+            .AsNoTracking()
+            .Where(lutador => lutador.Categoria != null && lutador.PosicaoNoRanking != null)
+            .ToListAsync(cancelamento));
 }
 
-/// <summary>A partida depois da jogada e o que a jogada produziu.</summary>
-public sealed record JogadaDaCarreira(Partida Partida, PassoDaCarreira Passo);
+/// <summary>
+/// A partida depois da jogada, o que a jogada produziu e o ranking da divisão
+/// em que ela aconteceu.
+/// </summary>
+/// <param name="Tabela">
+/// O ranking real da divisão do jogador. A camada de contrato encaixa o jogador
+/// nele na hora de responder.
+/// </param>
+/// <param name="PosicaoAnterior">
+/// Onde o jogador estava antes desta jogada, para a tela poder animar a subida.
+/// Nulo quando ele não estava ranqueado.
+/// </param>
+public sealed record JogadaDaCarreira(
+    Partida Partida,
+    PassoDaCarreira Passo,
+    TabelaDaDivisao Tabela,
+    int? PosicaoAnterior);

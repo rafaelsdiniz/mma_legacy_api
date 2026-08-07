@@ -33,6 +33,11 @@ public static class Cenario
             resistencia ?? padrao,
             inteligenciaDeLuta ?? padrao);
 
+    /// <summary>O motor de carreira montado com suas dependências reais.</summary>
+    public static MmaLegacy.Api.Simulation.MotorDeCarreira Motor() =>
+        new(new MmaLegacy.Api.Simulation.MotorDeLuta(),
+            new MmaLegacy.Api.Simulation.GeradorDeAdversarios());
+
     public static FichaDeInscricao Ficha(
         CategoriaDePeso categoria = CategoriaDePeso.MeioPesado,
         int idadeInicial = 22) =>
