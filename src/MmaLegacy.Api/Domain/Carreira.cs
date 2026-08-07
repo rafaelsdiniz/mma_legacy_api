@@ -24,6 +24,10 @@ public sealed class Carreira
 {
     private readonly List<LutaDaCarreira> _lutas = [];
     private readonly List<OfertaDeLuta> _ofertas = [];
+    private readonly List<Rival> _rivais = [];
+
+    /// <summary>Quantos adversários de fora do ranking a carreira mantém na memória.</summary>
+    private const int LimiteDeRivaisLembrados = 4;
 
     public Guid Id { get; private set; }
 
@@ -85,6 +89,13 @@ public sealed class Carreira
 
     /// <summary>As lutas na mesa agora. Vazia quando a carreira acabou.</summary>
     public IReadOnlyList<OfertaDeLuta> Ofertas => _ofertas.OrderBy(oferta => oferta.Indice).ToList();
+
+    /// <summary>
+    /// Quem o lutador já enfrentou fora do ranking, do encontro mais recente
+    /// para o mais antigo.
+    /// </summary>
+    public IReadOnlyList<Rival> Rivais =>
+        _rivais.OrderByDescending(rival => rival.OrdemDoUltimoEncontro).ToList();
 
     /// <summary>Total de lutas disputadas.</summary>
     public int TotalDeLutas => _lutas.Count;
@@ -292,5 +303,51 @@ public sealed class Carreira
         }
 
         FoiDuploCampeao = categoriasComCinturao.Count >= 2;
+    }
+
+    /// <summary>
+    /// Guarda quem acabou de ser enfrentado fora do ranking, para que ele possa
+    /// voltar.
+    /// </summary>
+    /// <remarks>
+    /// A carreira lembra de poucos, e dos mais recentes. Uma lista sem limite
+    /// viraria um catálogo de figurantes que o jogador não reconhece — e uma
+    /// revanche contra alguém de doze lutas atrás não é revanche, é coincidência.
+    /// </remarks>
+    internal void RegistrarEncontro(
+        OfertaDeLuta oferta,
+        ResultadoDaLuta resultado,
+        MetodoDeEncerramento metodo)
+    {
+        ArgumentNullException.ThrowIfNull(oferta);
+
+        var rival = _rivais.FirstOrDefault(candidato => candidato.Id == oferta.RivalId)
+            ?? Acolher(new Rival(oferta.Adversario, oferta.CartelDoAdversario, oferta.AtributosDoAdversario));
+
+        rival.Anotar(resultado, metodo, TotalDeLutas);
+    }
+
+    /// <summary>
+    /// Alguém que venceu o jogador e ainda está fresco na memória, ou nulo se
+    /// não há conta a acertar.
+    /// </summary>
+    /// <param name="janela">
+    /// Quantas lutas atrás o último encontro ainda conta como recente.
+    /// </param>
+    internal Rival? RivalComContaAAcertar(int janela) => Rivais
+        .FirstOrDefault(rival =>
+            rival.TemContaAAcertar &&
+            TotalDeLutas - rival.OrdemDoUltimoEncontro <= janela);
+
+    private Rival Acolher(Rival rival)
+    {
+        _rivais.Add(rival);
+
+        while (_rivais.Count > LimiteDeRivaisLembrados)
+        {
+            _rivais.Remove(_rivais.MinBy(candidato => candidato.OrdemDoUltimoEncontro)!);
+        }
+
+        return rival;
     }
 }
