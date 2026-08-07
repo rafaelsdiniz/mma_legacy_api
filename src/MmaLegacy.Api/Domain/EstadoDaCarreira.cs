@@ -363,4 +363,20 @@ public sealed class EstadoDaCarreira
 
         return true;
     }
+
+    /// <summary>
+    /// Grava o que o campo de treino produziu, antes de a luta acontecer.
+    /// </summary>
+    /// <remarks>
+    /// Separado de <see cref="VirarOAno"/> porque são coisas diferentes: a
+    /// virada do ano é o que o tempo faz com o lutador, e o camp é o que ele
+    /// faz consigo mesmo. Um acontece com ele; o outro ele escolhe.
+    /// </remarks>
+    internal void AplicarCamp(Atributos atributosDepoisDoCamp)
+    {
+        ArgumentNullException.ThrowIfNull(atributosDepoisDoCamp);
+
+        Atributos = atributosDepoisDoCamp;
+        OverallMaximo = Math.Max(OverallMaximo, OverallAtual);
+    }
 }

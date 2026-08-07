@@ -25,6 +25,7 @@ public sealed record SituacaoDaCarreiraResposta(
     CarreiraResposta Carreira,
     DesfechoDaUltimaLutaResposta? UltimaLuta,
     IReadOnlyList<EventoDaCarreira> Eventos,
+    CampResposta? Camp,
     IReadOnlyList<LinhaDoRankingResposta> RankingDaDivisao,
     int? PosicaoAnterior)
 {
@@ -59,6 +60,7 @@ public sealed record SituacaoDaCarreiraResposta(
             CarreiraResposta.DeDominio(carreira),
             DesfechoDaUltimaLutaResposta.DeDominio(passo),
             passo?.Eventos ?? [],
+            CampResposta.DeDominio(passo?.Camp),
             MontarRanking(tabela, nome, carreira.Estado.PosicaoNoRanking),
             posicaoAnterior);
     }
@@ -193,6 +195,39 @@ public sealed record LesaoResposta(
     }
 }
 
+/// <summary>Uma intensidade de camp e o risco de lesão que ela traz para esta luta.</summary>
+/// <remarks>
+/// Vai uma linha por intensidade porque a escolha é feita na tela: o jogador
+/// precisa ver que treinar pesado custa alguns pontos percentuais de risco antes
+/// de decidir se vale.
+/// </remarks>
+public sealed record OpcaoDeCampResposta(IntensidadeDoTreino Intensidade, double RiscoDeLesao);
+
+/// <summary>O que o camp que antecedeu a luta produziu.</summary>
+/// <remarks>
+/// Diferencia "treinou e não rendeu" de "treinou e já estava no teto". São
+/// resultados iguais na nota e opostos na decisão: o primeiro pede insistência,
+/// o segundo pede outro foco.
+/// </remarks>
+public sealed record CampResposta(
+    Habilidade? Foco,
+    IntensidadeDoTreino Intensidade,
+    bool Evoluiu,
+    bool NoTetoDoPotencial,
+    int NotaAntes,
+    int NotaDepois)
+{
+    public static CampResposta? DeDominio(ResultadoDoCamp? camp) => camp is null
+        ? null
+        : new CampResposta(
+            camp.Foco,
+            camp.Intensidade,
+            camp.Evoluiu,
+            camp.NoTetoDoPotencial,
+            camp.NotaAntes,
+            camp.NotaDepois);
+}
+
 /// <summary>Uma luta na mesa, esperando a decisão do jogador.</summary>
 public sealed record OfertaDeLutaResposta(
     int Indice,
@@ -211,6 +246,7 @@ public sealed record OfertaDeLutaResposta(
     string Chamada,
     GrauDeDificuldade Dificuldade,
     double RiscoDeLesao,
+    IReadOnlyList<OpcaoDeCampResposta> OpcoesDeCamp,
     string? SlugDoAdversario,
     int? PosicaoDoAdversario)
 {
@@ -231,6 +267,9 @@ public sealed record OfertaDeLutaResposta(
         oferta.Chamada,
         oferta.DificuldadeContra(estado.OverallAtual),
         oferta.RiscoDeLesaoPara(estado),
+        oferta.RiscoDeLesaoPorIntensidade(estado)
+            .Select(par => new OpcaoDeCampResposta(par.Key, par.Value))
+            .ToList(),
         oferta.SlugDoAdversario,
         oferta.PosicaoDoAdversario);
 }
@@ -283,5 +322,19 @@ public sealed record RoundResposta(
         round.Encerramento);
 }
 
-/// <summary>Corpo do pedido de aceitar uma oferta.</summary>
-public sealed record AceitarOfertaRequisicao(int Indice);
+/// <summary>
+/// Corpo do pedido de aceitar uma oferta.
+/// </summary>
+/// <remarks>
+/// Duas decisões viajam juntas porque são tomadas juntas: contra quem se vai
+/// lutar e com que corpo se vai chegar lá. Os dois campos do camp são opcionais
+/// — quem não escolher nada faz um camp padrão sem foco, que é exatamente como
+/// a carreira funcionava antes de o treino existir.
+/// </remarks>
+/// <param name="Indice">A oferta escolhida na rodada, começando em 1.</param>
+/// <param name="FocoDoCamp">Em que o lutador vai treinar, ou nulo para nenhum foco.</param>
+/// <param name="Intensidade">Com que peso ele vai treinar. Nulo vale por padrão.</param>
+public sealed record AceitarOfertaRequisicao(
+    int Indice,
+    Habilidade? FocoDoCamp = null,
+    IntensidadeDoTreino? Intensidade = null);
