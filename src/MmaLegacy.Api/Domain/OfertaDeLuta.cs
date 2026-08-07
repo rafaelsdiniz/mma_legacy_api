@@ -36,6 +36,23 @@ public sealed class OfertaDeLuta
 
     public string Adversario { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// Slug do adversário quando ele é um atleta real do acervo, para o
+    /// front-end achar a foto. Nulo nos adversários inventados do circuito
+    /// regional e da LFA.
+    /// </summary>
+    public string? SlugDoAdversario { get; private set; }
+
+    /// <summary>
+    /// Posição do adversário no ranking da divisão, ou nulo se ele é fictício.
+    /// </summary>
+    /// <remarks>
+    /// É o que a vitória converte em degrau: bater o décimo segundo colocado dá
+    /// ao jogador a vaga de número doze. Sem guardar isto na oferta, o motor
+    /// teria de redescobrir contra quem a luta foi depois de ela acontecer.
+    /// </remarks>
+    public int? PosicaoDoAdversario { get; private set; }
+
     /// <summary>Cartel fictício do adversário, só para dar contexto à decisão.</summary>
     public string CartelDoAdversario { get; private set; } = string.Empty;
 
@@ -69,10 +86,14 @@ public sealed class OfertaDeLuta
         bool disputaDeCinturao,
         bool defesaDeCinturao,
         int roundsProgramados,
-        string chamada)
+        string chamada,
+        string? slugDoAdversario = null,
+        int? posicaoDoAdversario = null)
     {
         Id = Guid.CreateVersion7();
         Indice = indice;
+        SlugDoAdversario = slugDoAdversario;
+        PosicaoDoAdversario = posicaoDoAdversario;
         Adversario = adversario;
         CartelDoAdversario = cartelDoAdversario;
         AtributosDoAdversario = atributosDoAdversario;

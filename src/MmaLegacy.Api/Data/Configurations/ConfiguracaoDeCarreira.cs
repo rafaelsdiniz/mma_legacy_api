@@ -61,9 +61,11 @@ public sealed class ConfiguracaoDeCarreira : IEntityTypeConfiguration<Carreira>
             estado.Property(dado => dado.CompromissosNaTemporada).HasColumnName("CompromissosNaTemporada");
             estado.Property(dado => dado.VezesDispensado).HasColumnName("VezesDispensado");
             estado.Property(dado => dado.Passo).HasColumnName("Passo");
+            estado.Property(dado => dado.PosicaoNoRanking).HasColumnName("PosicaoNoRanking");
 
             estado.Ignore(dado => dado.OverallAtual);
             estado.Ignore(dado => dado.Estilo);
+            estado.Ignore(dado => dado.EstaRanqueado);
 
             estado.OwnsOne(dado => dado.Atributos, ConfiguracaoDeAtributos.Aplicar);
             estado.Navigation(dado => dado.Atributos).IsRequired();
@@ -106,6 +108,12 @@ public sealed class ConfiguracaoDeCarreira : IEntityTypeConfiguration<Carreira>
             oferta.Property(dado => dado.Adversario).HasMaxLength(80).IsRequired();
             oferta.Property(dado => dado.CartelDoAdversario).HasMaxLength(20).IsRequired();
             oferta.Property(dado => dado.Chamada).HasMaxLength(120).IsRequired();
+
+            // Preenchidos só quando o adversário é um atleta real do acervo. No
+            // circuito regional e na LFA ele é inventado, e não tem foto nem
+            // lugar no ranking.
+            oferta.Property(dado => dado.SlugDoAdversario).HasMaxLength(80);
+            oferta.Property(dado => dado.PosicaoDoAdversario);
 
             // Overall e estilo são derivados dos atributos na leitura, pelas
             // mesmas regras que classificam o lutador do jogador. Gravá-los

@@ -24,25 +24,68 @@ public sealed record SituacaoDaCarreiraResposta(
     IReadOnlyList<OfertaDeLutaResposta> Ofertas,
     CarreiraResposta Carreira,
     DesfechoDaUltimaLutaResposta? UltimaLuta,
-    IReadOnlyList<EventoDaCarreira> Eventos)
+    IReadOnlyList<EventoDaCarreira> Eventos,
+    IReadOnlyList<LinhaDoRankingResposta> RankingDaDivisao,
+    int? PosicaoAnterior)
 {
-    public static SituacaoDaCarreiraResposta DeDominio(Partida partida, PassoDaCarreira? passo = null)
+    /// <param name="tabela">
+    /// O ranking real da divisão do jogador. Vem de fora porque quem conhece o
+    /// acervo é o serviço; a resposta só encaixa o jogador nele.
+    /// </param>
+    /// <param name="posicaoAnterior">
+    /// Onde o jogador estava antes desta jogada, para a tela poder animar o
+    /// movimento. Nulo quando nada mudou.
+    /// </param>
+    public static SituacaoDaCarreiraResposta DeDominio(
+        Partida partida,
+        TabelaDaDivisao? tabela = null,
+        PassoDaCarreira? passo = null,
+        int? posicaoAnterior = null)
     {
         ArgumentNullException.ThrowIfNull(partida);
 
         var carreira = partida.ExigirCarreira();
+        var nome = partida.Ficha.NomeDeCartaz();
 
         return new SituacaoDaCarreiraResposta(
             partida.Id,
-            partida.Ficha.NomeDeCartaz(),
+            nome,
             carreira.Encerrada,
             carreira.MotivoDoEncerramento,
             EstadoDaCarreiraResposta.DeDominio(carreira),
             carreira.Ofertas.Select(OfertaDeLutaResposta.DeDominio).ToList(),
             CarreiraResposta.DeDominio(carreira),
             DesfechoDaUltimaLutaResposta.DeDominio(passo),
-            passo?.Eventos ?? []);
+            passo?.Eventos ?? [],
+            MontarRanking(tabela, nome, carreira.Estado.PosicaoNoRanking),
+            posicaoAnterior);
     }
+
+    private static IReadOnlyList<LinhaDoRankingResposta> MontarRanking(
+        TabelaDaDivisao? tabela,
+        string nome,
+        int? posicaoDoJogador) =>
+        tabela is null || tabela.EstaVazia
+            ? []
+            : tabela.ComOJogador(nome, posicaoDoJogador)
+                .Select(LinhaDoRankingResposta.DeDominio)
+                .ToList();
+}
+
+/// <summary>Uma linha da tabela do ranking, já com o jogador encaixado nela.</summary>
+public sealed record LinhaDoRankingResposta(
+    int Posicao,
+    string Nome,
+    string? Slug,
+    decimal Overall,
+    bool EhOJogador)
+{
+    public static LinhaDoRankingResposta DeDominio(LinhaDoRanking linha) => new(
+        linha.Posicao,
+        linha.Nome,
+        linha.Slug,
+        linha.Overall,
+        linha.EhOJogador);
 }
 
 /// <summary>Onde o lutador está agora e a que distância está do próximo degrau.</summary>
@@ -72,7 +115,8 @@ public sealed record EstadoDaCarreiraResposta(
     int VitoriasParaSubir,
     int CompromissosNaTemporada,
     int CompromissosPorTemporada,
-    int VezesDispensado)
+    int VezesDispensado,
+    int? PosicaoNoRanking)
 {
     public static EstadoDaCarreiraResposta DeDominio(Carreira carreira)
     {
@@ -98,7 +142,8 @@ public sealed record EstadoDaCarreiraResposta(
             RegrasDaCarreira.VitoriasParaSubir(estado.Etapa),
             estado.CompromissosNaTemporada,
             RegrasDaCarreira.CompromissosPorTemporada(estado.Etapa),
-            estado.VezesDispensado);
+            estado.VezesDispensado,
+            estado.PosicaoNoRanking);
     }
 }
 
@@ -117,7 +162,9 @@ public sealed record OfertaDeLutaResposta(
     bool DisputaDeCinturao,
     bool DefesaDeCinturao,
     int RoundsProgramados,
-    string Chamada)
+    string Chamada,
+    string? SlugDoAdversario,
+    int? PosicaoDoAdversario)
 {
     public static OfertaDeLutaResposta DeDominio(OfertaDeLuta oferta) => new(
         oferta.Indice,
@@ -133,7 +180,9 @@ public sealed record OfertaDeLutaResposta(
         oferta.DisputaDeCinturao,
         oferta.DefesaDeCinturao,
         oferta.RoundsProgramados,
-        oferta.Chamada);
+        oferta.Chamada,
+        oferta.SlugDoAdversario,
+        oferta.PosicaoDoAdversario);
 }
 
 /// <summary>

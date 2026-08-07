@@ -291,7 +291,8 @@ public sealed class FluxoDaPartidaTeste : IDisposable
     {
         await using var contexto = _banco.CriarContexto();
 
-        return (await MontarServicoDeCarreira(contexto).EstrearAsync(partidaId)).ExigirCarreira();
+        return (await MontarServicoDeCarreira(contexto).EstrearAsync(partidaId))
+            .Partida.ExigirCarreira();
     }
 
     private async Task<Carreira> SimularORestoAsync(Guid partidaId)

@@ -65,6 +65,20 @@ public sealed class EstadoDaCarreira
     public int VezesDispensado { get; private set; }
 
     /// <summary>
+    /// Posição do jogador no ranking da divisão: <c>0</c> é o campeão, <c>1</c>
+    /// a <c>15</c> os ranqueados, e <c>null</c> quem ainda não entrou.
+    /// </summary>
+    /// <remarks>
+    /// É o único número guardado sobre o ranking. A tabela que o jogador vê é
+    /// derivada dele na leitura, pela <see cref="TabelaDaDivisao"/> — o ranking
+    /// oficial do acervo nunca é alterado, porque a subida é privada da partida.
+    /// </remarks>
+    public int? PosicaoNoRanking { get; private set; }
+
+    /// <summary>Já tem número ao lado do nome na divisão.</summary>
+    public bool EstaRanqueado => PosicaoNoRanking is not null;
+
+    /// <summary>
     /// Quantas decisões já foram tomadas nesta carreira.
     /// </summary>
     /// <remarks>
@@ -159,6 +173,52 @@ public sealed class EstadoDaCarreira
         VitoriasNaEtapa = 0;
     }
 
+    /// <summary>
+    /// Toma a vaga de quem acabou de ser vencido.
+    /// </summary>
+    /// <remarks>
+    /// Só melhora: bater alguém abaixo de você no ranking não te faz descer para
+    /// a posição dele. A etapa passa a ser derivada da posição, porque no UFC
+    /// quem diz onde você está é o número ao lado do seu nome, não um degrau
+    /// abstrato.
+    /// </remarks>
+    internal void AssumirPosicaoNoRanking(int posicao)
+    {
+        if (PosicaoNoRanking is { } atual && atual <= posicao)
+        {
+            return;
+        }
+
+        PosicaoNoRanking = posicao;
+        Etapa = EtapaPelaPosicao(posicao);
+        VitoriasNaEtapa = 0;
+    }
+
+    /// <summary>Perder o cinturão devolve o ex-campeão ao primeiro lugar da fila.</summary>
+    internal void CairParaODesafiante()
+    {
+        PosicaoNoRanking = 1;
+        Etapa = EtapaDaCarreira.Top5;
+        EhCampeao = false;
+        VitoriasNaEtapa = 0;
+    }
+
+    /// <summary>
+    /// A etapa que corresponde a uma posição do ranking. É o que mantém a escada
+    /// antiga e o ranking real contando a mesma história.
+    /// </summary>
+    internal static EtapaDaCarreira EtapaPelaPosicao(int posicao) => posicao switch
+    {
+        TabelaDaDivisao.PosicaoDoCampeao => EtapaDaCarreira.Campeao,
+
+        // Chegar a número um é, por definição, ser o próximo da fila. A luta
+        // seguinte já é pelo cinturão.
+        1 => EtapaDaCarreira.DisputaDeCinturao,
+
+        <= 5 => EtapaDaCarreira.Top5,
+        _ => EtapaDaCarreira.Top15
+    };
+
     internal void SubirDeEtapa(EtapaDaCarreira destino)
     {
         Etapa = destino;
@@ -172,6 +232,11 @@ public sealed class EstadoDaCarreira
         DerrotasSeguidas = 0;
         RecusasSeguidas = 0;
         VezesDispensado++;
+
+        // Ser cortado apaga o número: ranking é da organização, e quem sai dela
+        // sai da tabela.
+        PosicaoNoRanking = null;
+        EhCampeao = false;
     }
 
     internal void ConquistarCinturao()
@@ -180,6 +245,7 @@ public sealed class EstadoDaCarreira
         EhCampeao = true;
         VitoriasNaEtapa = 0;
         DefesasNaCategoria = 0;
+        PosicaoNoRanking = TabelaDaDivisao.PosicaoDoCampeao;
     }
 
     internal void DefenderCinturao() => DefesasNaCategoria++;
@@ -194,12 +260,16 @@ public sealed class EstadoDaCarreira
     internal void MudarDeCategoria(CategoriaDePeso destino, int ajusteDeOverall)
     {
         Categoria = destino;
-        Etapa = EtapaDaCarreira.Top5;
+        Etapa = EtapaDaCarreira.Top15;
         EhCampeao = false;
         JaMudouDeCategoria = true;
         VitoriasNaEtapa = 0;
         DefesasNaCategoria = 0;
         AjusteDeOverallDoAdversario = ajusteDeOverall;
+
+        // Subir de peso reabre a fila do zero: o cinturão da divisão antiga não
+        // vale número na nova. É o que torna o duplo campeonato uma conquista.
+        PosicaoNoRanking = null;
     }
 
     /// <summary>Fecha o ano: zera o calendário, envelhece e reavalia o pico.</summary>
