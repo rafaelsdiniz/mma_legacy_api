@@ -65,6 +65,23 @@ public sealed class EstadoDaCarreira
     public int VezesDispensado { get; private set; }
 
     /// <summary>
+    /// A lesão que o lutador está tratando agora, ou nulo se ele está inteiro.
+    /// </summary>
+    /// <remarks>
+    /// Some assim que sara. Guardar lesão curada aqui criaria dois estados
+    /// parecidos — "machucado" e "machucado mas já pode lutar" — e todo lugar
+    /// que lê isto teria de saber a diferença. O histórico de quantas vieram
+    /// fica em <see cref="LesoesSofridas"/>, que é o que a aposentadoria olha.
+    /// </remarks>
+    public Lesao? LesaoAtual { get; private set; }
+
+    /// <summary>Quantas lesões o corpo já levou nesta carreira.</summary>
+    public int LesoesSofridas { get; private set; }
+
+    /// <summary>Está parado se recuperando, e por isso não recebe ofertas.</summary>
+    public bool EstaLesionado => LesaoAtual is not null;
+
+    /// <summary>
     /// Posição do jogador no ranking da divisão: <c>0</c> é o campeão, <c>1</c>
     /// a <c>15</c> os ranqueados, e <c>null</c> quem ainda não entrou.
     /// </summary>
@@ -283,5 +300,67 @@ public sealed class EstadoDaCarreira
         Idade++;
 
         OverallMaximo = Math.Max(OverallMaximo, OverallAtual);
+    }
+
+    /// <summary>
+    /// Registra a lesão e cobra a sequela na hora.
+    /// </summary>
+    /// <remarks>
+    /// A perda de atributo é aplicada de uma vez, aqui, e não guardada como uma
+    /// penalidade temporária que alguém precisa lembrar de remover quando a
+    /// lesão sarar. Penalidade viva é penalidade que um dia fica para trás.
+    /// <para>
+    /// É por isso que lesão dói de verdade: o afastamento passa, o ponto de
+    /// velocidade não volta. Um lutador que se machucou três vezes chega aos 32
+    /// anos sendo outro lutador.
+    /// </para>
+    /// </remarks>
+    internal void Lesionar(Lesao lesao)
+    {
+        ArgumentNullException.ThrowIfNull(lesao);
+
+        LesaoAtual = lesao;
+        LesoesSofridas++;
+
+        var sequela = Domain.Lesao.SequelaDe(lesao.Gravidade);
+        if (sequela == 0)
+        {
+            return;
+        }
+
+        Atributos = Atributos.ComAjustes(new Dictionary<Habilidade, int>
+        {
+            [Domain.Lesao.HabilidadeAfetadaPor(lesao.Tipo)] = -sequela
+        });
+    }
+
+    /// <summary>
+    /// Passa um compromisso do calendário em tratamento.
+    /// </summary>
+    /// <remarks>
+    /// Recuperar-se gasta calendário como uma luta gastaria, mas <b>não</b>
+    /// conta como recusa: quem está machucado não está fugindo de ninguém, e a
+    /// organização não rescinde contrato por isso. Também não apaga o caso que
+    /// o lutador vinha construindo — a lesão já cobrou o bastante.
+    /// </remarks>
+    /// <returns>Verdadeiro quando a lesão sarou e o lutador volta à ativa.</returns>
+    internal bool TratarLesao()
+    {
+        if (LesaoAtual is not { } lesao)
+        {
+            return false;
+        }
+
+        CompromissosNaTemporada++;
+        lesao.Tratar();
+
+        if (!lesao.Sarou)
+        {
+            return false;
+        }
+
+        LesaoAtual = null;
+
+        return true;
     }
 }
