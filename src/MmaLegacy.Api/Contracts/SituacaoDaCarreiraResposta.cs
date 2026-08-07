@@ -229,6 +229,11 @@ public sealed record CampResposta(
 }
 
 /// <summary>Uma luta na mesa, esperando a decisão do jogador.</summary>
+/// <remarks>
+/// Quando é revanche, o histórico do confronto direto vai junto: o jogador
+/// precisa saber que este é o cara que o nocauteou dois anos atrás, e não só
+/// mais um nome com overall parecido.
+/// </remarks>
 public sealed record OfertaDeLutaResposta(
     int Indice,
     string Adversario,
@@ -245,6 +250,9 @@ public sealed record OfertaDeLutaResposta(
     int RoundsProgramados,
     string Chamada,
     GrauDeDificuldade Dificuldade,
+    bool EhRevanche,
+    int VitoriasDoAdversarioSobreVoce,
+    int DerrotasDoAdversarioParaVoce,
     double RiscoDeLesao,
     IReadOnlyList<OpcaoDeCampResposta> OpcoesDeCamp,
     string? SlugDoAdversario,
@@ -266,6 +274,9 @@ public sealed record OfertaDeLutaResposta(
         oferta.RoundsProgramados,
         oferta.Chamada,
         oferta.DificuldadeContra(estado.OverallAtual),
+        oferta.EhRevanche,
+        oferta.VitoriasDoAdversarioSobreVoce,
+        oferta.DerrotasDoAdversarioParaVoce,
         oferta.RiscoDeLesaoPara(estado),
         oferta.RiscoDeLesaoPorIntensidade(estado)
             .Select(par => new OpcaoDeCampResposta(par.Key, par.Value))

@@ -71,6 +71,17 @@ public sealed class OfertaDeLuta
     /// <summary>A manchete da luta, do jeito que a organização a venderia.</summary>
     public string Chamada { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// Rival que esta oferta traz de volta, ou nulo se o adversário é novo.
+    /// </summary>
+    public Guid? RivalId { get; private set; }
+
+    /// <summary>Quantas vezes este adversário já venceu o jogador.</summary>
+    public int VitoriasDoAdversarioSobreVoce { get; private set; }
+
+    /// <summary>Quantas vezes o jogador já venceu este adversário.</summary>
+    public int DerrotasDoAdversarioParaVoce { get; private set; }
+
     /// <summary>Construtor sem parâmetros exigido pelo Entity Framework.</summary>
     private OfertaDeLuta()
     {
@@ -88,7 +99,8 @@ public sealed class OfertaDeLuta
         int roundsProgramados,
         string chamada,
         string? slugDoAdversario = null,
-        int? posicaoDoAdversario = null)
+        int? posicaoDoAdversario = null,
+        Rival? rival = null)
     {
         Id = Guid.CreateVersion7();
         Indice = indice;
@@ -103,6 +115,13 @@ public sealed class OfertaDeLuta
         DefesaDeCinturao = defesaDeCinturao;
         RoundsProgramados = roundsProgramados;
         Chamada = chamada;
+
+        if (rival is not null)
+        {
+            RivalId = rival.Id;
+            VitoriasDoAdversarioSobreVoce = rival.VitoriasSobreOJogador;
+            DerrotasDoAdversarioParaVoce = rival.DerrotasParaOJogador;
+        }
     }
 
     public decimal OverallDoAdversario => CalculadoraDeOverall.Calcular(AtributosDoAdversario);
@@ -110,6 +129,9 @@ public sealed class OfertaDeLuta
     public EstiloDeLuta EstiloDoAdversario => IdentificadorDeEstilo.Identificar(AtributosDoAdversario);
 
     public bool ValendoCinturao => DisputaDeCinturao || DefesaDeCinturao;
+
+    /// <summary>Já se enfrentaram antes.</summary>
+    public bool EhRevanche => RivalId is not null;
 
     /// <summary>
     /// Quão dura esta luta é para um lutador com o overall informado.
