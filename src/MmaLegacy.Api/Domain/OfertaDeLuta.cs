@@ -130,13 +130,30 @@ public sealed class OfertaDeLuta
     /// que mostra o risco antes da decisão e o sorteio que o cobra depois. Um
     /// método só garante que os dois falem do mesmo número.
     /// </remarks>
-    public double RiscoDeLesaoPara(EstadoDaCarreira estado)
+    public double RiscoDeLesaoPara(
+        EstadoDaCarreira estado,
+        IntensidadeDoTreino intensidade = IntensidadeDoTreino.Padrao)
     {
         ArgumentNullException.ThrowIfNull(estado);
 
         return CalculadoraDeLesao.Risco(
             DificuldadeContra(estado.OverallAtual),
             estado.Idade,
-            estado.Atributos[Habilidade.Resistencia]);
+            estado.Atributos[Habilidade.Resistencia],
+            intensidade);
     }
+
+    /// <summary>
+    /// O risco desta luta em cada intensidade de camp possível.
+    /// </summary>
+    /// <remarks>
+    /// Vai inteiro para a tela porque a intensidade é escolhida ali, junto com
+    /// a luta. Mandar só o risco padrão e deixar o front multiplicar por 0,7 e
+    /// por 1,4 seria ensinar a regra do jogo à camada que não deveria conhecê-la
+    /// — e um dia as duas versões dela discordariam.
+    /// </remarks>
+    public IReadOnlyDictionary<IntensidadeDoTreino, double> RiscoDeLesaoPorIntensidade(
+        EstadoDaCarreira estado) =>
+        Enum.GetValues<IntensidadeDoTreino>()
+            .ToDictionary(intensidade => intensidade, intensidade => RiscoDeLesaoPara(estado, intensidade));
 }
