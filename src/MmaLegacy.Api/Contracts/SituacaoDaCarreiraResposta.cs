@@ -53,7 +53,9 @@ public sealed record SituacaoDaCarreiraResposta(
             carreira.Encerrada,
             carreira.MotivoDoEncerramento,
             EstadoDaCarreiraResposta.DeDominio(carreira),
-            carreira.Ofertas.Select(OfertaDeLutaResposta.DeDominio).ToList(),
+            carreira.Ofertas
+                .Select(oferta => OfertaDeLutaResposta.DeDominio(oferta, carreira.Estado))
+                .ToList(),
             CarreiraResposta.DeDominio(carreira),
             DesfechoDaUltimaLutaResposta.DeDominio(passo),
             passo?.Eventos ?? [],
@@ -116,6 +118,8 @@ public sealed record EstadoDaCarreiraResposta(
     int CompromissosNaTemporada,
     int CompromissosPorTemporada,
     int VezesDispensado,
+    int LesoesSofridas,
+    LesaoResposta? Lesao,
     int? PosicaoNoRanking)
 {
     public static EstadoDaCarreiraResposta DeDominio(Carreira carreira)
@@ -143,7 +147,49 @@ public sealed record EstadoDaCarreiraResposta(
             estado.CompromissosNaTemporada,
             RegrasDaCarreira.CompromissosPorTemporada(estado.Etapa),
             estado.VezesDispensado,
+            estado.LesoesSofridas,
+            LesaoResposta.DeDominio(estado.LesaoAtual),
             estado.PosicaoNoRanking);
+    }
+}
+
+/// <summary>
+/// A lesão que está tirando o lutador de ação.
+/// </summary>
+/// <remarks>
+/// Vem com a sequela já explicitada, porque o jogador precisa entender o que
+/// perdeu. "Joelho lesionado" é uma frase; "joelho lesionado, dois pontos de
+/// velocidade a menos, para sempre" é a regra do jogo — e é ela que faz o
+/// jogador pensar duas vezes na próxima oferta brutal.
+/// </remarks>
+public sealed record LesaoResposta(
+    TipoDeLesao Tipo,
+    GravidadeDaLesao Gravidade,
+    Habilidade? HabilidadeAfetada,
+    int PontosPerdidos,
+    int Afastamento,
+    int CompromissosRestantes,
+    int IdadeQuandoOcorreu)
+{
+    public static LesaoResposta? DeDominio(Lesao? lesao)
+    {
+        if (lesao is null)
+        {
+            return null;
+        }
+
+        var pontosPerdidos = Lesao.SequelaDe(lesao.Gravidade);
+
+        return new LesaoResposta(
+            lesao.Tipo,
+            lesao.Gravidade,
+            // Corte não deixa sequela, e apontar uma habilidade afetada com
+            // zero ponto perdido faria a tela mentir.
+            pontosPerdidos > 0 ? Lesao.HabilidadeAfetadaPor(lesao.Tipo) : null,
+            pontosPerdidos,
+            lesao.Afastamento,
+            lesao.CompromissosRestantes,
+            lesao.IdadeQuandoOcorreu);
     }
 }
 
@@ -163,10 +209,12 @@ public sealed record OfertaDeLutaResposta(
     bool DefesaDeCinturao,
     int RoundsProgramados,
     string Chamada,
+    GrauDeDificuldade Dificuldade,
+    double RiscoDeLesao,
     string? SlugDoAdversario,
     int? PosicaoDoAdversario)
 {
-    public static OfertaDeLutaResposta DeDominio(OfertaDeLuta oferta) => new(
+    public static OfertaDeLutaResposta DeDominio(OfertaDeLuta oferta, EstadoDaCarreira estado) => new(
         oferta.Indice,
         oferta.Adversario,
         oferta.CartelDoAdversario,
@@ -181,6 +229,8 @@ public sealed record OfertaDeLutaResposta(
         oferta.DefesaDeCinturao,
         oferta.RoundsProgramados,
         oferta.Chamada,
+        oferta.DificuldadeContra(estado.OverallAtual),
+        oferta.RiscoDeLesaoPara(estado),
         oferta.SlugDoAdversario,
         oferta.PosicaoDoAdversario);
 }
